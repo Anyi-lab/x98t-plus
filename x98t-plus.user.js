@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X大哥4.10版+收藏夹
 // @namespace    https://www.sehuatang.net
-// @version      4.11.0
+// @version      4.11.1
 // @description  98堂(原色花堂)官方脚本 高级搜索 作者追更 收藏追更/导出 图片分批懒加载 原图查看 橙金风UI
 // @author       98堂
 // @match        *://*.sehuatang.net/*
@@ -792,11 +792,13 @@
         const normalizedSearchSort = ["native", "dateline", "lastpost"].includes(savedSearchSort)
             ? savedSearchSort
             : "native";
-        // 板块帖子列表的默认排序：native=不干预（网站原生为发布时间）
-        const savedForumSort = GM_getValue("forumDefaultSort", "native");
+        // 板块帖子列表的默认排序：默认「发布时间」。
+        // 网站原生默认是「回复时间」，所以脚本进入板块页会补 orderby=dateline 重定向；
+        // 选 native（网站默认）则不干预，选 lastpost（回复时间）则补 orderby=lastpost。
+        const savedForumSort = GM_getValue("forumDefaultSort", "dateline");
         const normalizedForumSort = ["native", "dateline", "lastpost"].includes(savedForumSort)
             ? savedForumSort
-            : "native";
+            : "dateline";
         const customBackgroundEnabled = GM_getValue("bgshCustomBackgroundEnabled", false) === true;
 
         return {
@@ -7891,14 +7893,14 @@
         initInfiniteScroll("isForumDisplayPage");
     }
 
-    // 板块帖子列表默认排序：网站原生是「按发布时间」(orderby=dateline)。
-    // 当用户在设置里选了「回复时间」时，进入没带 orderby 的板块页就自动补上
-    // orderby=lastpost&ascdesc=desc 并重定向一次，让服务端真正按回复时间取数据
-    // （只在前端重排会导致取到的帖子集合本身就是错的）。
+    // 板块帖子列表默认排序：网站原生默认是「按回复时间」(orderby=lastpost)。
+    // 脚本默认给没带 orderby 的板块页补上 orderby=dateline&ascdesc=desc 并重定向一次，
+    // 让服务端真正按发布时间取数据（只在前端重排会导致取到的帖子集合本身就是错的）。
+    // 选「网站默认」时不干预；选「回复时间」时补 orderby=lastpost。
     // 用 location.replace 避免污染后退历史；URL 里已有 orderby 时一律不干预，
-    // 这样点排序按钮切回「发布时间」仍然有效，不会被自动改回去。
+    // 这样点排序按钮切回「回复时间」仍然有效，不会被自动改回去。
     function applyForumDefaultSort() {
-        var preferred = GM_getValue("forumDefaultSort", "native");
+        var preferred = GM_getValue("forumDefaultSort", "dateline");
         if (preferred !== "dateline" && preferred !== "lastpost") return false;
         if (!/forum\.php\?mod=forumdisplay|\/forum-\d+-\d+\.html/.test(window.location.href)) return false;
 
@@ -7925,9 +7927,9 @@
 
     function createSortButton() {
         const currentURL = window.location.href;
-        // 本站原生默认是「按发布时间」(orderby=dateline)。URL 没带 orderby 时
-        // 就按原生排序展示，按钮如实显示当前状态，点击后切换成回复时间。
-        let currentOrder = 'dateline';
+        // 本站原生默认是「按回复时间」(orderby=lastpost)。URL 没带 orderby 时
+        // 按原生排序展示（回复时间），按钮如实显示当前状态，点击后切换排序。
+        let currentOrder = 'lastpost';
         const om = currentURL.match(/orderby=(\w+)/);
         if (om) currentOrder = om[1];
 
@@ -9080,9 +9082,9 @@
                 const current = new URL(location.href);
                 // 排序字段必须覆盖下一页链接中可能存在的网站默认值，
                 // 不能只在参数缺失时补充，否则会混用 dateline/lastpost。
-                // 兜底值取用户设置的板块默认排序；用户没设时跟随网站原生（发布时间），
-                // 避免自动翻页时悄悄退回回复时间。
-                var fallbackOrder = GM_getValue("forumDefaultSort", "native");
+                // 兜底值取用户设置的板块默认排序；用户没设时按脚本默认「发布时间」，
+                // 避免自动翻页时退回网站原生的回复时间排序。
+                var fallbackOrder = GM_getValue("forumDefaultSort", "dateline");
                 if (fallbackOrder !== "dateline" && fallbackOrder !== "lastpost") fallbackOrder = "dateline";
                 target.searchParams.set(
                     "orderby",
@@ -9365,7 +9367,7 @@
         function enforceForumThreadOrder(container) {
             if (pageName !== "isForumDisplayPage" || !container) return;
             var currentURL = new URL(location.href);
-            var orderby = currentURL.searchParams.get("orderby") || "dateline";
+            var orderby = currentURL.searchParams.get("orderby") || "lastpost";
             if (orderby !== "dateline" && orderby !== "lastpost") return;
             var direction = currentURL.searchParams.get("ascdesc") === "asc" ? 1 : -1;
             var rows = Array.from(container.children).filter(function(child) {
@@ -10558,7 +10560,7 @@
                                     <div class="bgsh-setting-item">
                                         <label>🗂️ 板块列表默认排序</label>
                                         <div class="bgsh-radio-group">
-                                            <label class="bgsh-radio-label"><input type="radio" name="settingsForumSort" value="native" ${settings.forumDefaultSort==="native"?"checked":""}> 网站默认</label>
+                                            <label class="bgsh-radio-label"><input type="radio" name="settingsForumSort" value="native" ${settings.forumDefaultSort==="native"?"checked":""}> 网站默认（回复时间）</label>
                                             <label class="bgsh-radio-label"><input type="radio" name="settingsForumSort" value="dateline" ${settings.forumDefaultSort==="dateline"?"checked":""}> 发布时间</label>
                                             <label class="bgsh-radio-label"><input type="radio" name="settingsForumSort" value="lastpost" ${settings.forumDefaultSort==="lastpost"?"checked":""}> 回复时间</label>
                                         </div>
@@ -11235,7 +11237,7 @@
             searchResultCount: 50,
             searchHotKeys: true,
             searchSort: "native",
-            forumDefaultSort: "native",
+            forumDefaultSort: "dateline",
             bgshSearchSort: "native",
         };
 
@@ -11324,7 +11326,7 @@
         settings.searchHistoryCount = Math.max(5, Math.min(50, parseInt(document.getElementById("searchHistoryCount").value, 10) || 20));
         settings.searchHotKeys = document.getElementById("searchHotKeys").checked;
         settings.searchSort = document.querySelector('input[name="settingsSearchSort"]:checked')?.value || 'native';
-        settings.forumDefaultSort = document.querySelector('input[name="settingsForumSort"]:checked')?.value || 'native';
+        settings.forumDefaultSort = document.querySelector('input[name="settingsForumSort"]:checked')?.value || 'dateline';
 
         const settingsToSave = {
             imageSize: settings.imageSize,
@@ -12096,6 +12098,16 @@ async function main() {
         var hasFavPage = isFavoritePageURL(window.location.href);
         if (document.title.indexOf("色花堂") == -1 && document.title.indexOf("98堂") == -1 && !hasFavPage) {
             return;
+        }
+
+        // 4.11.1：板块列表默认排序由「网站默认(实为回复时间)」改为「按发布时间」。
+        // 旧安装存的 native 会一直不再干预，这里做一次性迁移为 dateline，
+        // 保证老用户进板块页也自动按发布时间排序；之后手动选「网站默认」不再被改。
+        if (GM_getValue("bgshForumSortMigratedToDateline", false) !== true) {
+            if (GM_getValue("forumDefaultSort", "native") === "native") {
+                GM_setValue("forumDefaultSort", "dateline");
+            }
+            GM_setValue("bgshForumSortMigratedToDateline", true);
         }
 
         // 板块列表默认排序：可能触发一次重定向，命中时直接结束本次执行，
