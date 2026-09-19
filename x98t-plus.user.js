@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X大哥4.10版+收藏夹
 // @namespace    https://www.sehuatang.net
-// @version      4.11.1
+// @version      4.11.2
 // @description  98堂(原色花堂)官方脚本 高级搜索 作者追更 收藏追更/导出 图片分批懒加载 原图查看 橙金风UI
 // @author       98堂
 // @match        *://*.sehuatang.net/*
@@ -9585,6 +9585,9 @@
                 manipulateMedals(settings);
             } else if (pageName == "isMySpacePage" || pageName == "isSpacePage") {
                 await displayThreadBuyInfoOther(settings);
+                // 空间帖子列表自动加载下一页后，新插入的行也要补图片预览，
+                // 否则只有首屏有图（板块列表一直是这么做的）。
+                displayAdvanThreadImages(settings);
             }
         }
 
@@ -11762,11 +11765,28 @@
         return false;
     }
 
+    // 空间「主题 / 回复」列表页判定：/home.php?mod=space&uid=xxx&do=thread&view=me
+    // 旧写法是一条长正则，要求 &do=thread&view=me 之后必须再跟一个 &xxx，
+    // 所以地址栏里没有 &from=space 的裸链接（直接访问 uid 的帖子列表）会被漏判，
+    // 整页既不加载图片预览也不挂无限滚动。这里改为按 URL 参数判断，
+    // 参数顺序、是否带 &type=reply / &from=space 都能命中。
+    function isSpaceThreadPage(url) {
+        var target;
+        try {
+            target = new URL(url || window.location.href, window.location.href);
+        } catch (error) {
+            return false;
+        }
+        if (!/(^|\/)home\.php$/i.test(target.pathname)) return false;
+        var params = new URLSearchParams(target.search);
+        return params.get("mod") === "space" && params.get("do") === "thread";
+    }
+
     async function delegatePageHandlers(settings, buttonContainer) {
         const isPostPage = () => /forum\.php\?mod=viewthread|\/thread-\d+-\d+-\d+\.html/.test(window.location.href);
         const isSearchPage = () => /search\.php/.test(window.location.href);
         const isForumDisplayPage = () => /forum\.php\?mod=forumdisplay|\/forum-\d+-\d+\.html/.test(window.location.href);
-        const isSpacePage = () => /home\.php\?mod=space(.*&&uid=\d+)?.*&do=thread&view=me(.*&from=space)?.*&(type=(reply|thread))?/.test(window.location.href);
+        const isSpacePage = () => isSpaceThreadPage(window.location.href);
         const isMySpacePage = () => /(forum|home)\.php\?mod=(guide|space|misc)&(view=(hot|digest|new|newthread|sofa|my)|action=showdarkroom|do=favorite)(&type=(thread|reply|postcomment))?/.test(window.location.href);
         const isMyfavoritePage = () => isFavoritePageURL(window.location.href);
 
