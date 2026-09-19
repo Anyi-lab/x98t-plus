@@ -1,5 +1,9 @@
 # x98t-plus（98堂脚本 · 自维护版）
 
+**仓库**：https://github.com/Anyi-lab/x98t-plus
+**安装/更新地址**：https://raw.githubusercontent.com/Anyi-lab/x98t-plus/main/x98t-plus.user.js
+**更新检查地址**：https://raw.githubusercontent.com/Anyi-lab/x98t-plus/main/x98t-plus.meta.js
+
 「X大哥4.10版+收藏夹」的个人自维护分支。**已断开官方/sleazyfork 更新源**，不会再被整份覆盖；
 改动全部走本地 git，上游出新版时用补丁方式合并（只审差异）。
 
@@ -34,17 +38,19 @@ git push && git push --tags     # 推到自己仓库（如已配置更新源）
 
 然后在 Tampermonkey 里**编辑现有脚本、全选粘贴新内容**（不要新装，否则两个脚本会同时生效）。
 
-## 首次配置自建更新源（可选）
+## 首次配置自建更新源（已完成，留档）
 
 ```bash
-node scripts/set-github.js https://raw.githubusercontent.com/<用户名>/<仓库>/main
-git add -A && git commit -m "chore: 指向自建更新源" && git push
+node scripts/set-github.js https://raw.githubusercontent.com/Anyi-lab/x98t-plus/main
+git add -A && git commit -m "chore: 更新源指向自建仓库" && git push
 ```
 
 之后 TM 每天检查一次；有新版会弹出「自维护版有新版本」对话框并跳到你的 raw 地址。
 想再断开：`node scripts/set-github.js --off`。
 
 > 注意：raw.githubusercontent.com 在国内可能需要代理，否则 TM 检查更新会失败（不影响脚本本身运行）。
+> 备选镜像（无代理时用它替换上面两个 URL 的域名）：
+> `https://cdn.jsdelivr.net/gh/Anyi-lab/x98t-plus@main/x98t-plus.meta.js`（jsDelivr 有缓存，会滞后几小时）
 
 ## 合并上游新版（差异化流程）
 
