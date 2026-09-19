@@ -1,0 +1,308 @@
+diff --git a/x98t-plus.user.js b/x98t-plus.user.js
+index 8d54681..53bbda8 100644
+--- a/x98t-plus.user.js
++++ b/x98t-plus.user.js
+@@ -1,7 +1,7 @@
+ // ==UserScript==
+ // @name         X大哥4.10版+收藏夹
+ // @namespace    https://www.sehuatang.net
+-// @version      4.11.0
++// @version      4.11.2
+ // @description  98堂(原色花堂)官方脚本 高级搜索 作者追更 收藏追更/导出 图片分批懒加载 原图查看 橙金风UI
+ // @author       98堂
+ // @match        *://*.sehuatang.net/*
+@@ -18,15 +18,18 @@
+ // @grant        GM_openInTab
+ // @connect      *
+ // @license      GPL-4.0 License
+-// @downloadURL https://update.sleazyfork.org/scripts/512445/%E4%B9%9D%E5%85%AB%E5%A0%82%E6%B0%B8%E4%B9%85%E7%BD%91%E5%9D%80WWW98TLA.user.js
+-// @updateURL https://update.sleazyfork.org/scripts/512445/%E4%B9%9D%E5%85%AB%E5%A0%82%E6%B0%B8%E4%B9%85%E7%BD%91%E5%9D%80WWW98TLA.meta.js
+ // ==/UserScript==
+ 
++// 自维护版（98T-plus）说明：
++// 1. 已断开上游 sleazyfork 更新源（@updateURL / @downloadURL 已移除），不会再被官方整份覆盖。
++// 2. 更新源改为自建仓库：跑一次 scripts/set-github.sh <raw-base> 就会把两个 URL 指过去。
++// 3. 每次改动必须递增 @version —— Tampermonkey 只认它来判断有没有新版（无增量更新机制）。
++
+ (async function () {
+     "use strict";
+ 
+     // #region 全局变量
+-    const scriptVer = "v4.11.0";
++    const scriptVer = "v4.11.2";
+     let activeTooltips = 0;
+     let toastQueue = [];
+     let isToastShowing = false;
+@@ -792,6 +795,13 @@
+         const normalizedSearchSort = ["native", "dateline", "lastpost"].includes(savedSearchSort)
+             ? savedSearchSort
+             : "native";
++        // 板块帖子列表的默认排序：默认「发布时间」。
++        // 网站原生默认是「回复时间」，所以脚本进入板块页会补 orderby=dateline 重定向；
++        // 选 native（网站默认）则不干预，选 lastpost（回复时间）则补 orderby=lastpost。
++        const savedForumSort = GM_getValue("forumDefaultSort", "dateline");
++        const normalizedForumSort = ["native", "dateline", "lastpost"].includes(savedForumSort)
++            ? savedForumSort
++            : "dateline";
+         const customBackgroundEnabled = GM_getValue("bgshCustomBackgroundEnabled", false) === true;
+ 
+         return {
+@@ -862,6 +872,7 @@
+             searchResultCount: GM_getValue("searchResultCount", 50),
+             searchHotKeys: GM_getValue("searchHotKeys", true),
+             searchSort: normalizedSearchSort,
++            forumDefaultSort: normalizedForumSort,
+             // 筛选状态
+             boardFilterGroup: GM_getValue("bgsh_filter_group", "all"),
+             boardFilterIndividual: GM_getValue("bgsh_filter_individual", "[]"),
+@@ -3475,7 +3486,11 @@
+         var globalPreviewCount = getSettings().threadPreviewCount || 3;
+         previewCount = clampNumber(GM_getValue(favKeys.previewCount, globalPreviewCount), 1, 20, globalPreviewCount);
+         poolSize = clampNumber(GM_getValue(favKeys.poolSize, 5), 1, 20, 5);
+-        isToolboxHidden = GM_getValue(favKeys.toolbox, false) === true;
++        // bgsh_toolbox_<uid> 是只读键：脚本里没有任何入口能把它写回 false，
++        // 一旦为 true（例如从旧脚本 sht_tree_toolbox_hide_ 迁移过来），侧栏底部
++        // 整块按钮会永久消失且无法恢复。这里做自愈：强制展开并清掉脏值。
++        isToolboxHidden = false;
++        if (GM_getValue(favKeys.toolbox, false) === true) GM_setValue(favKeys.toolbox, false);
+         lastFolder = String(GM_getValue(favKeys.lastFolder, "/"));
+         if (!folders.includes(lastFolder)) { lastFolder = "/"; GM_setValue(favKeys.lastFolder, "/"); }
+         var changed = false;
+@@ -4408,13 +4423,16 @@
+         var root = createElement("div", { id: "bgshFavoriteApp" });
+         Object.assign(root.style, { display: "flex", width: "100%", height: "750px", overflow: "hidden", border: "1px solid #ddd", borderRadius: "8px", background: "#fff", boxSizing: "border-box" });
+         var sidebar = createElement("aside", { id: "bgshFavoriteSidebar" });
+-        Object.assign(sidebar.style, { display: "flex", width: "230px", flexShrink: "0", flexDirection: "column", borderRight: "1px solid #eee", background: "#f9f9f9", transition: "width .2s" });
++        Object.assign(sidebar.style, { display: "flex", width: "230px", flexShrink: "0", minHeight: "0", flexDirection: "column", borderRight: "1px solid #eee", background: "#f9f9f9", transition: "width .2s" });
+         var sidebarTitle = createElement("div", { text: "📁 目录导航" });
+         Object.assign(sidebarTitle.style, { padding: "15px", borderBottom: "1px solid #eee", background: "#eee", fontWeight: "bold" });
+         var tree = createElement("div", { id: "bgshFavoriteTree" });
+-        Object.assign(tree.style, { flex: "1", overflowY: "auto", padding: "10px 0" });
++        // minHeight:0 是必须的：flex 子项默认 min-height:auto，目录多的时候目录树
++        // 不肯收缩，会把下面的工具箱顶出 #bgshFavoriteApp（固定 750px + overflow:hidden），
++        // 导致「创建目录/同步/补齐作者/自动分类/清空」整块被裁掉看不见。
++        Object.assign(tree.style, { flex: "1 1 auto", minHeight: "0", overflowY: "auto", padding: "10px 0" });
+         var toolbox = createElement("div", { id: "bgshFavoriteToolbox" });
+-        Object.assign(toolbox.style, { flexShrink: "0", padding: "12px", borderTop: "1px solid #eee", background: "#fbfbfb" });
++        Object.assign(toolbox.style, { flexShrink: "0", maxHeight: "60%", overflowY: "auto", padding: "12px", borderTop: "1px solid #eee", background: "#fbfbfb" });
+         var addInput = createElement("input", { id: "bgshFavoriteFolderInput", attrs: { type: "text", placeholder: "输入目录名..." } });
+         Object.assign(addInput.style, { boxSizing: "border-box", width: "100%", marginBottom: "8px", padding: "7px", border: "1px solid #ccc", borderRadius: "4px" });
+         var addButton = createElement("button", { className: "bgsh-customBtn", text: "➕ 创建目录", id: "bgshFavoriteAddFolder" });
+@@ -7878,8 +7896,42 @@
+         initInfiniteScroll("isForumDisplayPage");
+     }
+ 
++    // 板块帖子列表默认排序：网站原生默认是「按回复时间」(orderby=lastpost)。
++    // 脚本默认给没带 orderby 的板块页补上 orderby=dateline&ascdesc=desc 并重定向一次，
++    // 让服务端真正按发布时间取数据（只在前端重排会导致取到的帖子集合本身就是错的）。
++    // 选「网站默认」时不干预；选「回复时间」时补 orderby=lastpost。
++    // 用 location.replace 避免污染后退历史；URL 里已有 orderby 时一律不干预，
++    // 这样点排序按钮切回「回复时间」仍然有效，不会被自动改回去。
++    function applyForumDefaultSort() {
++        var preferred = GM_getValue("forumDefaultSort", "dateline");
++        if (preferred !== "dateline" && preferred !== "lastpost") return false;
++        if (!/forum\.php\?mod=forumdisplay|\/forum-\d+-\d+\.html/.test(window.location.href)) return false;
++
++        var url;
++        try {
++            url = new URL(window.location.href);
++        } catch (error) {
++            return false;
++        }
++        if (url.searchParams.get("orderby")) return false;
++
++        // 双保险：同一个地址只自动跳一次，任何意外都不会变成重定向死循环
++        var guardKey = "bgshForumSortRedirect:" + url.pathname + url.search;
++        try {
++            if (sessionStorage.getItem(guardKey)) return false;
++            sessionStorage.setItem(guardKey, "1");
++        } catch (error) {}
++
++        url.searchParams.set("orderby", preferred);
++        url.searchParams.set("ascdesc", "desc");
++        window.location.replace(url.toString());
++        return true;
++    }
++
+     function createSortButton() {
+         const currentURL = window.location.href;
++        // 本站原生默认是「按回复时间」(orderby=lastpost)。URL 没带 orderby 时
++        // 按原生排序展示（回复时间），按钮如实显示当前状态，点击后切换排序。
+         let currentOrder = 'lastpost';
+         const om = currentURL.match(/orderby=(\w+)/);
+         if (om) currentOrder = om[1];
+@@ -9033,9 +9085,13 @@
+                 const current = new URL(location.href);
+                 // 排序字段必须覆盖下一页链接中可能存在的网站默认值，
+                 // 不能只在参数缺失时补充，否则会混用 dateline/lastpost。
++                // 兜底值取用户设置的板块默认排序；用户没设时按脚本默认「发布时间」，
++                // 避免自动翻页时退回网站原生的回复时间排序。
++                var fallbackOrder = GM_getValue("forumDefaultSort", "dateline");
++                if (fallbackOrder !== "dateline" && fallbackOrder !== "lastpost") fallbackOrder = "dateline";
+                 target.searchParams.set(
+                     "orderby",
+-                    current.searchParams.get("orderby") || "lastpost"
++                    current.searchParams.get("orderby") || fallbackOrder
+                 );
+                 target.searchParams.set(
+                     "ascdesc",
+@@ -9532,6 +9588,9 @@
+                 manipulateMedals(settings);
+             } else if (pageName == "isMySpacePage" || pageName == "isSpacePage") {
+                 await displayThreadBuyInfoOther(settings);
++                // 空间帖子列表自动加载下一页后，新插入的行也要补图片预览，
++                // 否则只有首屏有图（板块列表一直是这么做的）。
++                displayAdvanThreadImages(settings);
+             }
+         }
+ 
+@@ -10340,9 +10399,19 @@
+         return 0;
+     }
+ 
++    // 自维护版：更新源只认这里。留空 = 完全不做更新检查（默认，已断开上游）。
++    // 填成自建仓库的 raw meta 地址即可恢复每日检查，例如：
++    //   https://raw.githubusercontent.com/<用户名>/<仓库>/main/x98t-plus.meta.js
++    const SELF_UPDATE_META_URL = "";
++
+     async function checkForUpdates() {
++        if (!SELF_UPDATE_META_URL) {
++            // 上游已断开且未配置自建更新源，什么都不做。
++            GM_setValue("lastCheckedUpdate", Date.now());
++            return;
++        }
+         const currentVersion = GM.info.script.version;
+-        const updateURL = "https://sleazyfork.org/zh-CN/scripts/512445-%E4%B9%9D%E5%85%AB%E5%A0%82%E6%B0%B8%E4%B9%85%E7%BD%91%E5%9D%80www-98t-la/code";
++        const updateURL = SELF_UPDATE_META_URL;
+ 
+         try {
+             let response = await fetch(updateURL);
+@@ -10359,13 +10428,15 @@
+     }
+ 
+     function showUpdateDialog() {
++        // 自维护版：下载地址由自建 meta 地址推导（xxx.meta.js → xxx.user.js），不再指向 sleazyfork。
++        const installURL = SELF_UPDATE_META_URL.replace(/\.meta\.js$/, ".user.js");
+         const dialogHTML = `
+             <div style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); backdrop-filter:blur(12px); z-index:99999; display:flex; justify-content:center; align-items:center;">
+                 <div style="background:rgba(255,248,235,0.92); backdrop-filter:blur(20px); padding:28px 36px; border-radius:20px; text-align:center; border:1px solid rgba(255,200,150,0.3); box-shadow:0 32px 80px rgba(0,0,0,0.25); max-width:400px;">
+                     <div style="font-size:48px; margin-bottom:12px;">🎉</div>
+                     <p style="font-size:16px; font-weight:600; color:#4a2e1b; margin-bottom:8px;">有新版本可用！</p>
+-                    <p style="font-size:13px; color:#666; margin-bottom:20px;">九八堂脚本已更新，请点击下方按钮更新</p>
+-                    <a href="https://sleazyfork.org/zh-CN/scripts/512445-%E4%B9%9D%E5%85%AB%E5%A0%82%E6%B0%B8%E4%B9%85%E7%BD%91%E5%9D%80www-98t-la" target="_blank" rel="noopener noreferrer" style="display:inline-block; padding:10px 32px; background:linear-gradient(135deg,#f7971e,#ffd200); color:#3d2a1a; border-radius:10px; text-decoration:none; font-weight:500; margin-bottom:12px;">🔄 立即更新</a>
++                    <p style="font-size:13px; color:#666; margin-bottom:20px;">自维护版有新版本，请点击下方按钮更新</p>
++                    <a href="${installURL}" target="_blank" rel="noopener noreferrer" style="display:inline-block; padding:10px 32px; background:linear-gradient(135deg,#f7971e,#ffd200); color:#3d2a1a; border-radius:10px; text-decoration:none; font-weight:500; margin-bottom:12px;">🔄 立即更新</a>
+                     <br>
+                     <button onclick="this.closest('div[style]').parentElement.remove();" style="padding:6px 20px; border:none; background:rgba(0,0,0,0.06); border-radius:8px; cursor:pointer; color:#666; font-size:13px;">关闭</button>
+                 </div>
+@@ -10393,7 +10464,7 @@
+         "showClickDouble", "showViewRatings", "showPayLog", "showFastCopy",
+         "blockingResolved", "isOnlyShowMoney", "blockingIndex", "menuButtonIsVisible",
+         "searchCacheEnabled", "searchAutoComplete", "searchHistoryCount",
+-        "searchResultCount", "searchHotKeys", "searchSort"
++        "searchResultCount", "searchHotKeys", "searchSort", "forumDefaultSort"
+     ]);
+ 
+     function isVolatileBackupKey(key) {
+@@ -10503,6 +10574,17 @@
+                                         <label class="bgsh-switch-label"><input type="checkbox" id="defaultSwipeToSearchCheckbox" ${settings.defaultSwipeToSearch?'checked':''}><span class="bgsh-switch-slider"></span><span class="bgsh-switch-text">划词搜索</span></label>
+                                     </div>
+                                 </div>
++                                <div class="bgsh-setting-group">
++                                    <div class="bgsh-setting-item">
++                                        <label>🗂️ 板块列表默认排序</label>
++                                        <div class="bgsh-radio-group">
++                                            <label class="bgsh-radio-label"><input type="radio" name="settingsForumSort" value="native" ${settings.forumDefaultSort==="native"?"checked":""}> 网站默认（回复时间）</label>
++                                            <label class="bgsh-radio-label"><input type="radio" name="settingsForumSort" value="dateline" ${settings.forumDefaultSort==="dateline"?"checked":""}> 发布时间</label>
++                                            <label class="bgsh-radio-label"><input type="radio" name="settingsForumSort" value="lastpost" ${settings.forumDefaultSort==="lastpost"?"checked":""}> 回复时间</label>
++                                        </div>
++                                        <span class="bgsh-hint">进入板块帖子列表时自动使用的排序，选「发布时间」后新帖优先（仍可用列表页排序按钮临时切换）</span>
++                                    </div>
++                                </div>
+                             </div>
+                             <!-- 显示 -->
+                             <div class="bgsh-tab-panel" id="tab-display">
+@@ -11173,6 +11255,7 @@
+             searchResultCount: 50,
+             searchHotKeys: true,
+             searchSort: "native",
++            forumDefaultSort: "dateline",
+             bgshSearchSort: "native",
+         };
+ 
+@@ -11261,6 +11344,7 @@
+         settings.searchHistoryCount = Math.max(5, Math.min(50, parseInt(document.getElementById("searchHistoryCount").value, 10) || 20));
+         settings.searchHotKeys = document.getElementById("searchHotKeys").checked;
+         settings.searchSort = document.querySelector('input[name="settingsSearchSort"]:checked')?.value || 'native';
++        settings.forumDefaultSort = document.querySelector('input[name="settingsForumSort"]:checked')?.value || 'dateline';
+ 
+         const settingsToSave = {
+             imageSize: settings.imageSize,
+@@ -11316,6 +11400,7 @@
+             searchHistoryCount: settings.searchHistoryCount,
+             searchHotKeys: settings.searchHotKeys,
+             searchSort: settings.searchSort,
++            forumDefaultSort: settings.forumDefaultSort,
+         };
+ 
+         for (let key in settingsToSave) {
+@@ -11362,6 +11447,7 @@
+             oldSettings.searchCacheEnabled !== settings.searchCacheEnabled ||
+             oldSettings.searchHotKeys !== settings.searchHotKeys ||
+             oldSettings.searchSort !== settings.searchSort ||
++            oldSettings.forumDefaultSort !== settings.forumDefaultSort ||
+             settings.replaceMedals === 0 ||
+             settings.replaceMedals === 2) {
+             location.reload();
+@@ -11694,11 +11780,28 @@
+         return false;
+     }
+ 
++    // 空间「主题 / 回复」列表页判定：/home.php?mod=space&uid=xxx&do=thread&view=me
++    // 旧写法是一条长正则，要求 &do=thread&view=me 之后必须再跟一个 &xxx，
++    // 所以地址栏里没有 &from=space 的裸链接（直接访问 uid 的帖子列表）会被漏判，
++    // 整页既不加载图片预览也不挂无限滚动。这里改为按 URL 参数判断，
++    // 参数顺序、是否带 &type=reply / &from=space 都能命中。
++    function isSpaceThreadPage(url) {
++        var target;
++        try {
++            target = new URL(url || window.location.href, window.location.href);
++        } catch (error) {
++            return false;
++        }
++        if (!/(^|\/)home\.php$/i.test(target.pathname)) return false;
++        var params = new URLSearchParams(target.search);
++        return params.get("mod") === "space" && params.get("do") === "thread";
++    }
++
+     async function delegatePageHandlers(settings, buttonContainer) {
+         const isPostPage = () => /forum\.php\?mod=viewthread|\/thread-\d+-\d+-\d+\.html/.test(window.location.href);
+         const isSearchPage = () => /search\.php/.test(window.location.href);
+         const isForumDisplayPage = () => /forum\.php\?mod=forumdisplay|\/forum-\d+-\d+\.html/.test(window.location.href);
+-        const isSpacePage = () => /home\.php\?mod=space(.*&&uid=\d+)?.*&do=thread&view=me(.*&from=space)?.*&(type=(reply|thread))?/.test(window.location.href);
++        const isSpacePage = () => isSpaceThreadPage(window.location.href);
+         const isMySpacePage = () => /(forum|home)\.php\?mod=(guide|space|misc)&(view=(hot|digest|new|newthread|sofa|my)|action=showdarkroom|do=favorite)(&type=(thread|reply|postcomment))?/.test(window.location.href);
+         const isMyfavoritePage = () => isFavoritePageURL(window.location.href);
+ 
+@@ -12032,6 +12135,21 @@ async function main() {
+             return;
+         }
+ 
++        // 4.11.1：板块列表默认排序由「网站默认(实为回复时间)」改为「按发布时间」。
++        // 旧安装存的 native 会一直不再干预，这里做一次性迁移为 dateline，
++        // 保证老用户进板块页也自动按发布时间排序；之后手动选「网站默认」不再被改。
++        if (GM_getValue("bgshForumSortMigratedToDateline", false) !== true) {
++            if (GM_getValue("forumDefaultSort", "native") === "native") {
++                GM_setValue("forumDefaultSort", "dateline");
++            }
++            GM_setValue("bgshForumSortMigratedToDateline", true);
++        }
++
++        // 板块列表默认排序：可能触发一次重定向，命中时直接结束本次执行，
++        // 避免在即将卸载的页面上做无意义的渲染。放在标题判断之后，
++        // 保证不会影响非本站页面（@match 是 *://*/*）。
++        if (applyForumDefaultSort()) return;
++
+         // 4.5.1 已移除自动签到与签到提醒，清理旧版遗留设置。
+         GM_deleteValue("qiandaoTip");
+         // 4.10.0 已移除楼内关键词订阅提醒，清理旧版遗留设置。

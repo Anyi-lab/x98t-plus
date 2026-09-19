@@ -26,10 +26,12 @@ try { new Function(code); console.log("SYNTAX_OK"); }
 catch (e) { console.log("SYNTAX_FAIL " + e.message); process.exit(1); }
 
 // 2) 更新源
-t("头部无 @updateURL", !/^\/\/\s*@updateURL/m.test(code));
-t("头部无 @downloadURL", !/^\/\/\s*@downloadURL/m.test(code));
-t("无写死的 sleazyfork 地址", !/["'`]https?:\/\/[^"'`]*sleazyfork/i.test(code));
-t("内建开关 SELF_UPDATE_META_URL 存在", /const SELF_UPDATE_META_URL = "";/.test(code));
+t("头部更新源不含 sleazyfork", !/^\/\/\s*@(update|download)URL\s+\S*sleazyfork/mi.test(code));
+t("代码里无写死的 sleazyfork 地址", !/["'`]https?:\/\/[^"'`]*sleazyfork/i.test(code));
+const hasUpdate = /^\/\/\s*@updateURL/m.test(code);
+const hasDownload = /^\/\/\s*@downloadURL/m.test(code);
+t("@updateURL/@downloadURL 成对出现或都不出现", hasUpdate === hasDownload, { hasUpdate, hasDownload });
+t("内建开关 SELF_UPDATE_META_URL 存在", /const SELF_UPDATE_META_URL = "[^"]*";/.test(code));
 t("未配置自建源时不发请求", /if \(!SELF_UPDATE_META_URL\) \{[\s\S]{0,160}?return;/.test(code));
 
 // 3) 板块默认排序（4.11.x）
