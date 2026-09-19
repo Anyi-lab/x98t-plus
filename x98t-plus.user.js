@@ -18,15 +18,18 @@
 // @grant        GM_openInTab
 // @connect      *
 // @license      GPL-4.0 License
-// @downloadURL https://update.sleazyfork.org/scripts/512445/%E4%B9%9D%E5%85%AB%E5%A0%82%E6%B0%B8%E4%B9%85%E7%BD%91%E5%9D%80WWW98TLA.user.js
-// @updateURL https://update.sleazyfork.org/scripts/512445/%E4%B9%9D%E5%85%AB%E5%A0%82%E6%B0%B8%E4%B9%85%E7%BD%91%E5%9D%80WWW98TLA.meta.js
 // ==/UserScript==
+
+// 自维护版（98T-plus）说明：
+// 1. 已断开上游 sleazyfork 更新源（@updateURL / @downloadURL 已移除），不会再被官方整份覆盖。
+// 2. 更新源改为自建仓库：跑一次 scripts/set-github.sh <raw-base> 就会把两个 URL 指过去。
+// 3. 每次改动必须递增 @version —— Tampermonkey 只认它来判断有没有新版（无增量更新机制）。
 
 (async function () {
     "use strict";
 
     // #region 全局变量
-    const scriptVer = "v4.11.0";
+    const scriptVer = "v4.11.2";
     let activeTooltips = 0;
     let toastQueue = [];
     let isToastShowing = false;
@@ -10396,9 +10399,19 @@
         return 0;
     }
 
+    // 自维护版：更新源只认这里。留空 = 完全不做更新检查（默认，已断开上游）。
+    // 填成自建仓库的 raw meta 地址即可恢复每日检查，例如：
+    //   https://raw.githubusercontent.com/<用户名>/<仓库>/main/x98t-plus.meta.js
+    const SELF_UPDATE_META_URL = "";
+
     async function checkForUpdates() {
+        if (!SELF_UPDATE_META_URL) {
+            // 上游已断开且未配置自建更新源，什么都不做。
+            GM_setValue("lastCheckedUpdate", Date.now());
+            return;
+        }
         const currentVersion = GM.info.script.version;
-        const updateURL = "https://sleazyfork.org/zh-CN/scripts/512445-%E4%B9%9D%E5%85%AB%E5%A0%82%E6%B0%B8%E4%B9%85%E7%BD%91%E5%9D%80www-98t-la/code";
+        const updateURL = SELF_UPDATE_META_URL;
 
         try {
             let response = await fetch(updateURL);
@@ -10415,13 +10428,15 @@
     }
 
     function showUpdateDialog() {
+        // 自维护版：下载地址由自建 meta 地址推导（xxx.meta.js → xxx.user.js），不再指向 sleazyfork。
+        const installURL = SELF_UPDATE_META_URL.replace(/\.meta\.js$/, ".user.js");
         const dialogHTML = `
             <div style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); backdrop-filter:blur(12px); z-index:99999; display:flex; justify-content:center; align-items:center;">
                 <div style="background:rgba(255,248,235,0.92); backdrop-filter:blur(20px); padding:28px 36px; border-radius:20px; text-align:center; border:1px solid rgba(255,200,150,0.3); box-shadow:0 32px 80px rgba(0,0,0,0.25); max-width:400px;">
                     <div style="font-size:48px; margin-bottom:12px;">🎉</div>
                     <p style="font-size:16px; font-weight:600; color:#4a2e1b; margin-bottom:8px;">有新版本可用！</p>
-                    <p style="font-size:13px; color:#666; margin-bottom:20px;">九八堂脚本已更新，请点击下方按钮更新</p>
-                    <a href="https://sleazyfork.org/zh-CN/scripts/512445-%E4%B9%9D%E5%85%AB%E5%A0%82%E6%B0%B8%E4%B9%85%E7%BD%91%E5%9D%80www-98t-la" target="_blank" rel="noopener noreferrer" style="display:inline-block; padding:10px 32px; background:linear-gradient(135deg,#f7971e,#ffd200); color:#3d2a1a; border-radius:10px; text-decoration:none; font-weight:500; margin-bottom:12px;">🔄 立即更新</a>
+                    <p style="font-size:13px; color:#666; margin-bottom:20px;">自维护版有新版本，请点击下方按钮更新</p>
+                    <a href="${installURL}" target="_blank" rel="noopener noreferrer" style="display:inline-block; padding:10px 32px; background:linear-gradient(135deg,#f7971e,#ffd200); color:#3d2a1a; border-radius:10px; text-decoration:none; font-weight:500; margin-bottom:12px;">🔄 立即更新</a>
                     <br>
                     <button onclick="this.closest('div[style]').parentElement.remove();" style="padding:6px 20px; border:none; background:rgba(0,0,0,0.06); border-radius:8px; cursor:pointer; color:#666; font-size:13px;">关闭</button>
                 </div>
