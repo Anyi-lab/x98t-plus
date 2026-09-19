@@ -792,6 +792,11 @@
         const normalizedSearchSort = ["native", "dateline", "lastpost"].includes(savedSearchSort)
             ? savedSearchSort
             : "native";
+        // 板块帖子列表的默认排序：native=不干预（网站原生为发布时间）
+        const savedForumSort = GM_getValue("forumDefaultSort", "native");
+        const normalizedForumSort = ["native", "dateline", "lastpost"].includes(savedForumSort)
+            ? savedForumSort
+            : "native";
         const customBackgroundEnabled = GM_getValue("bgshCustomBackgroundEnabled", false) === true;
 
         return {
@@ -862,6 +867,7 @@
             searchResultCount: GM_getValue("searchResultCount", 50),
             searchHotKeys: GM_getValue("searchHotKeys", true),
             searchSort: normalizedSearchSort,
+            forumDefaultSort: normalizedForumSort,
             // 筛选状态
             boardFilterGroup: GM_getValue("bgsh_filter_group", "all"),
             boardFilterIndividual: GM_getValue("bgsh_filter_individual", "[]"),
@@ -7885,9 +7891,43 @@
         initInfiniteScroll("isForumDisplayPage");
     }
 
+    // 板块帖子列表默认排序：网站原生是「按发布时间」(orderby=dateline)。
+    // 当用户在设置里选了「回复时间」时，进入没带 orderby 的板块页就自动补上
+    // orderby=lastpost&ascdesc=desc 并重定向一次，让服务端真正按回复时间取数据
+    // （只在前端重排会导致取到的帖子集合本身就是错的）。
+    // 用 location.replace 避免污染后退历史；URL 里已有 orderby 时一律不干预，
+    // 这样点排序按钮切回「发布时间」仍然有效，不会被自动改回去。
+    function applyForumDefaultSort() {
+        var preferred = GM_getValue("forumDefaultSort", "native");
+        if (preferred !== "dateline" && preferred !== "lastpost") return false;
+        if (!/forum\.php\?mod=forumdisplay|\/forum-\d+-\d+\.html/.test(window.location.href)) return false;
+
+        var url;
+        try {
+            url = new URL(window.location.href);
+        } catch (error) {
+            return false;
+        }
+        if (url.searchParams.get("orderby")) return false;
+
+        // 双保险：同一个地址只自动跳一次，任何意外都不会变成重定向死循环
+        var guardKey = "bgshForumSortRedirect:" + url.pathname + url.search;
+        try {
+            if (sessionStorage.getItem(guardKey)) return false;
+            sessionStorage.setItem(guardKey, "1");
+        } catch (error) {}
+
+        url.searchParams.set("orderby", preferred);
+        url.searchParams.set("ascdesc", "desc");
+        window.location.replace(url.toString());
+        return true;
+    }
+
     function createSortButton() {
         const currentURL = window.location.href;
-        let currentOrder = 'lastpost';
+        // 本站原生默认是「按发布时间」(orderby=dateline)。URL 没带 orderby 时
+        // 就按原生排序展示，按钮如实显示当前状态，点击后切换成回复时间。
+        let currentOrder = 'dateline';
         const om = currentURL.match(/orderby=(\w+)/);
         if (om) currentOrder = om[1];
 
@@ -9040,9 +9080,13 @@
                 const current = new URL(location.href);
                 // 排序字段必须覆盖下一页链接中可能存在的网站默认值，
                 // 不能只在参数缺失时补充，否则会混用 dateline/lastpost。
+                // 兜底值取用户设置的板块默认排序；用户没设时跟随网站原生（发布时间），
+                // 避免自动翻页时悄悄退回回复时间。
+                var fallbackOrder = GM_getValue("forumDefaultSort", "native");
+                if (fallbackOrder !== "dateline" && fallbackOrder !== "lastpost") fallbackOrder = "dateline";
                 target.searchParams.set(
                     "orderby",
-                    current.searchParams.get("orderby") || "lastpost"
+                    current.searchParams.get("orderby") || fallbackOrder
                 );
                 target.searchParams.set(
                     "ascdesc",
@@ -9321,7 +9365,7 @@
         function enforceForumThreadOrder(container) {
             if (pageName !== "isForumDisplayPage" || !container) return;
             var currentURL = new URL(location.href);
-            var orderby = currentURL.searchParams.get("orderby") || "lastpost";
+            var orderby = currentURL.searchParams.get("orderby") || "dateline";
             if (orderby !== "dateline" && orderby !== "lastpost") return;
             var direction = currentURL.searchParams.get("ascdesc") === "asc" ? 1 : -1;
             var rows = Array.from(container.children).filter(function(child) {
@@ -10400,7 +10444,7 @@
         "showClickDouble", "showViewRatings", "showPayLog", "showFastCopy",
         "blockingResolved", "isOnlyShowMoney", "blockingIndex", "menuButtonIsVisible",
         "searchCacheEnabled", "searchAutoComplete", "searchHistoryCount",
-        "searchResultCount", "searchHotKeys", "searchSort"
+        "searchResultCount", "searchHotKeys", "searchSort", "forumDefaultSort"
     ]);
 
     function isVolatileBackupKey(key) {
@@ -10508,6 +10552,17 @@
                                     <div class="bgsh-switch-grid">
                                         <label class="bgsh-switch-label"><input type="checkbox" id="autoPaginationCheckbox" ${settings.autoPagination?'checked':''}><span class="bgsh-switch-slider"></span><span class="bgsh-switch-text">自动翻页</span></label>
                                         <label class="bgsh-switch-label"><input type="checkbox" id="defaultSwipeToSearchCheckbox" ${settings.defaultSwipeToSearch?'checked':''}><span class="bgsh-switch-slider"></span><span class="bgsh-switch-text">划词搜索</span></label>
+                                    </div>
+                                </div>
+                                <div class="bgsh-setting-group">
+                                    <div class="bgsh-setting-item">
+                                        <label>🗂️ 板块列表默认排序</label>
+                                        <div class="bgsh-radio-group">
+                                            <label class="bgsh-radio-label"><input type="radio" name="settingsForumSort" value="native" ${settings.forumDefaultSort==="native"?"checked":""}> 网站默认</label>
+                                            <label class="bgsh-radio-label"><input type="radio" name="settingsForumSort" value="dateline" ${settings.forumDefaultSort==="dateline"?"checked":""}> 发布时间</label>
+                                            <label class="bgsh-radio-label"><input type="radio" name="settingsForumSort" value="lastpost" ${settings.forumDefaultSort==="lastpost"?"checked":""}> 回复时间</label>
+                                        </div>
+                                        <span class="bgsh-hint">进入板块帖子列表时自动使用的排序，选「发布时间」后新帖优先（仍可用列表页排序按钮临时切换）</span>
                                     </div>
                                 </div>
                             </div>
@@ -11180,6 +11235,7 @@
             searchResultCount: 50,
             searchHotKeys: true,
             searchSort: "native",
+            forumDefaultSort: "native",
             bgshSearchSort: "native",
         };
 
@@ -11268,6 +11324,7 @@
         settings.searchHistoryCount = Math.max(5, Math.min(50, parseInt(document.getElementById("searchHistoryCount").value, 10) || 20));
         settings.searchHotKeys = document.getElementById("searchHotKeys").checked;
         settings.searchSort = document.querySelector('input[name="settingsSearchSort"]:checked')?.value || 'native';
+        settings.forumDefaultSort = document.querySelector('input[name="settingsForumSort"]:checked')?.value || 'native';
 
         const settingsToSave = {
             imageSize: settings.imageSize,
@@ -11323,6 +11380,7 @@
             searchHistoryCount: settings.searchHistoryCount,
             searchHotKeys: settings.searchHotKeys,
             searchSort: settings.searchSort,
+            forumDefaultSort: settings.forumDefaultSort,
         };
 
         for (let key in settingsToSave) {
@@ -11369,6 +11427,7 @@
             oldSettings.searchCacheEnabled !== settings.searchCacheEnabled ||
             oldSettings.searchHotKeys !== settings.searchHotKeys ||
             oldSettings.searchSort !== settings.searchSort ||
+            oldSettings.forumDefaultSort !== settings.forumDefaultSort ||
             settings.replaceMedals === 0 ||
             settings.replaceMedals === 2) {
             location.reload();
@@ -12038,6 +12097,11 @@ async function main() {
         if (document.title.indexOf("色花堂") == -1 && document.title.indexOf("98堂") == -1 && !hasFavPage) {
             return;
         }
+
+        // 板块列表默认排序：可能触发一次重定向，命中时直接结束本次执行，
+        // 避免在即将卸载的页面上做无意义的渲染。放在标题判断之后，
+        // 保证不会影响非本站页面（@match 是 *://*/*）。
+        if (applyForumDefaultSort()) return;
 
         // 4.5.1 已移除自动签到与签到提醒，清理旧版遗留设置。
         GM_deleteValue("qiandaoTip");
