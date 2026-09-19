@@ -3475,7 +3475,11 @@
         var globalPreviewCount = getSettings().threadPreviewCount || 3;
         previewCount = clampNumber(GM_getValue(favKeys.previewCount, globalPreviewCount), 1, 20, globalPreviewCount);
         poolSize = clampNumber(GM_getValue(favKeys.poolSize, 5), 1, 20, 5);
-        isToolboxHidden = GM_getValue(favKeys.toolbox, false) === true;
+        // bgsh_toolbox_<uid> 是只读键：脚本里没有任何入口能把它写回 false，
+        // 一旦为 true（例如从旧脚本 sht_tree_toolbox_hide_ 迁移过来），侧栏底部
+        // 整块按钮会永久消失且无法恢复。这里做自愈：强制展开并清掉脏值。
+        isToolboxHidden = false;
+        if (GM_getValue(favKeys.toolbox, false) === true) GM_setValue(favKeys.toolbox, false);
         lastFolder = String(GM_getValue(favKeys.lastFolder, "/"));
         if (!folders.includes(lastFolder)) { lastFolder = "/"; GM_setValue(favKeys.lastFolder, "/"); }
         var changed = false;
@@ -4408,13 +4412,16 @@
         var root = createElement("div", { id: "bgshFavoriteApp" });
         Object.assign(root.style, { display: "flex", width: "100%", height: "750px", overflow: "hidden", border: "1px solid #ddd", borderRadius: "8px", background: "#fff", boxSizing: "border-box" });
         var sidebar = createElement("aside", { id: "bgshFavoriteSidebar" });
-        Object.assign(sidebar.style, { display: "flex", width: "230px", flexShrink: "0", flexDirection: "column", borderRight: "1px solid #eee", background: "#f9f9f9", transition: "width .2s" });
+        Object.assign(sidebar.style, { display: "flex", width: "230px", flexShrink: "0", minHeight: "0", flexDirection: "column", borderRight: "1px solid #eee", background: "#f9f9f9", transition: "width .2s" });
         var sidebarTitle = createElement("div", { text: "📁 目录导航" });
         Object.assign(sidebarTitle.style, { padding: "15px", borderBottom: "1px solid #eee", background: "#eee", fontWeight: "bold" });
         var tree = createElement("div", { id: "bgshFavoriteTree" });
-        Object.assign(tree.style, { flex: "1", overflowY: "auto", padding: "10px 0" });
+        // minHeight:0 是必须的：flex 子项默认 min-height:auto，目录多的时候目录树
+        // 不肯收缩，会把下面的工具箱顶出 #bgshFavoriteApp（固定 750px + overflow:hidden），
+        // 导致「创建目录/同步/补齐作者/自动分类/清空」整块被裁掉看不见。
+        Object.assign(tree.style, { flex: "1 1 auto", minHeight: "0", overflowY: "auto", padding: "10px 0" });
         var toolbox = createElement("div", { id: "bgshFavoriteToolbox" });
-        Object.assign(toolbox.style, { flexShrink: "0", padding: "12px", borderTop: "1px solid #eee", background: "#fbfbfb" });
+        Object.assign(toolbox.style, { flexShrink: "0", maxHeight: "60%", overflowY: "auto", padding: "12px", borderTop: "1px solid #eee", background: "#fbfbfb" });
         var addInput = createElement("input", { id: "bgshFavoriteFolderInput", attrs: { type: "text", placeholder: "输入目录名..." } });
         Object.assign(addInput.style, { boxSizing: "border-box", width: "100%", marginBottom: "8px", padding: "7px", border: "1px solid #ccc", borderRadius: "4px" });
         var addButton = createElement("button", { className: "bgsh-customBtn", text: "➕ 创建目录", id: "bgshFavoriteAddFolder" });
