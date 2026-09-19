@@ -18,4 +18,7 @@
 // @grant        GM_openInTab
 // @connect      *
 // @license      GPL-4.0 License
+// @homepageURL  https://raw.githubusercontent.com/Anyi-lab/x98t-plus/main
+// @downloadURL  https://raw.githubusercontent.com/Anyi-lab/x98t-plus/main/x98t-plus.user.js
+// @updateURL    https://raw.githubusercontent.com/Anyi-lab/x98t-plus/main/x98t-plus.meta.js
 // ==/UserScript==

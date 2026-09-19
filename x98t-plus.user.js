@@ -18,6 +18,9 @@
 // @grant        GM_openInTab
 // @connect      *
 // @license      GPL-4.0 License
+// @homepageURL  https://raw.githubusercontent.com/Anyi-lab/x98t-plus/main
+// @downloadURL  https://raw.githubusercontent.com/Anyi-lab/x98t-plus/main/x98t-plus.user.js
+// @updateURL    https://raw.githubusercontent.com/Anyi-lab/x98t-plus/main/x98t-plus.meta.js
 // ==/UserScript==
 
 // 自维护版（98T-plus）说明：
@@ -10402,7 +10405,7 @@
     // 自维护版：更新源只认这里。留空 = 完全不做更新检查（默认，已断开上游）。
     // 填成自建仓库的 raw meta 地址即可恢复每日检查，例如：
     //   https://raw.githubusercontent.com/<用户名>/<仓库>/main/x98t-plus.meta.js
-    const SELF_UPDATE_META_URL = "";
+    const SELF_UPDATE_META_URL = "https://raw.githubusercontent.com/Anyi-lab/x98t-plus/main/x98t-plus.meta.js";
 
     async function checkForUpdates() {
         if (!SELF_UPDATE_META_URL) {
