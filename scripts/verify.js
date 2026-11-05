@@ -62,5 +62,13 @@ if (fs.existsSync(META)) {
   t("meta.js 存在", false, "缺少 x98t-plus.meta.js（跑 node scripts/gen-meta.js）");
 }
 
+// 6) 合并下载（4.13.0，从【蚂蚁脚本】并入，已去 localhost 依赖）
+t("合并下载：不调用任何本地端口", !/https?:\/\/localhost:\d+/i.test(code) && !/fetch\(\s*[`"']http:\/\/127\.0\.0\.1/i.test(code));
+t("合并下载：Alt+D 快捷键", /event\.altKey/.test(code) && /keyCode !== 68/.test(code) && /bgshMergeHotkeyBound/.test(code));
+t("合并下载：ed2k + magnet 双解析", /magnet:\\\?\\\?/.test(code) && /ed2k:\\\/\\\/\\\|file\\\|/.test(code));
+t("合并下载：三个入口按钮", ["bgshMergeDownloadButton","bgshExportLinksButton","bgshDownloadAttachmentsButton"].every(function(id){ return code.indexOf(id) > -1; }));
+t("合并下载：跳过目录/sha1/torrent", /isNoiseAttachment/.test(code));
+t("合并下载：已接入 handlePostPage", /insertMergeDownloadButtons\(buttonContainer\);/.test(code));
+
 console.log("\nRESULT: " + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

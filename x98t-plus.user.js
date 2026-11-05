@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X大哥4.10版+收藏夹
 // @namespace    https://www.sehuatang.net
-// @version      4.12.3
+// @version      4.13.0
 // @description  98堂(原色花堂)官方脚本 高级搜索 作者追更 收藏追更/导出 图片分批懒加载 原图查看 橙金风UI
 // @author       98堂
 // @match        *://*.sehuatang.net/*
@@ -32,7 +32,7 @@
     "use strict";
 
     // #region 全局变量
-    const scriptVer = "v4.12.3";
+    const scriptVer = "v4.13.0";
     let activeTooltips = 0;
     let toastQueue = [];
     let isToastShowing = false;
@@ -1297,6 +1297,31 @@
                 max-height: 80vh;
                 overflow-y: auto;
                 padding: 4px 0;
+                scrollbar-width: thin;
+            }
+            /* 帖子页按钮多，分组：分隔线与下载组高亮，避免一长条同色按钮糊成一片 */
+            .bgsh-toolbar .bgsh-toolbar-sep {
+                width: 34px;
+                height: 1px;
+                flex: 0 0 auto;
+                background: linear-gradient(90deg, transparent, rgba(247,151,30,.55), transparent);
+                margin: 2px 0;
+            }
+            .bgsh-toolbar .bgsh-btn-download {
+                background: linear-gradient(135deg, #f5576c, #f093fb);
+                color: #fff;
+            }
+            .bgsh-toolbar .bgsh-btn-download:hover {
+                box-shadow: 0 8px 26px rgba(245,87,108,.4);
+            }
+            .bgsh-toolbar .bgsh-btn-sub {
+                background: rgba(247,151,30,.14);
+                color: #a85f0d;
+                font-weight: 500;
+            }
+            [data-bgsh-theme="dark"] .bgsh-toolbar .bgsh-btn-sub {
+                background: rgba(247,151,30,.18);
+                color: #ffd200;
             }
             .bgsh-toolbar .bgsh-customBtn {
                 width: 108px;
@@ -2609,8 +2634,10 @@
                     gap: 4px;
                 }
                 .bgsh-toolbar .bgsh-customBtn {
-                    min-width: 36px;
-                    padding: 4px 8px;
+                    width: 88px;
+                    min-width: 88px;
+                    max-width: 88px;
+                    padding: 4px 6px;
                     font-size: 11px;
                 }
                 .bgsh-search-input-group { flex-wrap: wrap; }
@@ -7282,12 +7309,204 @@
         if (settings.showFastCopy) buttonContainer.appendChild(createFastCopyButton());
 
         setupPostImageLazyLoading(buttonContainer);
+        insertMergeDownloadButtons(buttonContainer);
         initInfiniteScroll("isPostPage");
         showAvatarEvent();
         replacePMonPost();
         removeFastReply();
         appendTitleFromHotImage();
         appendBuyNumber();
+    }
+    // #endregion
+
+    // #region 合并下载（从【蚂蚁脚本】98tang--[合并下载] 并入，重写为不依赖 localhost）
+    // 原脚本能力：帖子页抓 blockcode 里的 ed2k/magnet 存成 txt + 逐个点附件 + Alt+D 快捷键。
+    // 原脚本还调用一个第三方本地服务（00Opera，默认 8082 端口）代按 Enter / Ctrl+W，
+    // 那套依赖与浏览器安全边界冲突，这里全部删掉：不再向任何本地端口发请求。
+    // 新增：合并下载 / 仅导出链接 / 仅下载附件 三个入口，统一挂在右侧工具栏。
+
+    function getMdThreadTitle() {
+        var el = document.querySelector("#thread_subject");
+        var title = el ? el.textContent.trim() : "";
+        if (!title) title = (document.title || "").replace(/\s*-\s*98堂.*$/, "").trim();
+        if (!title) title = "untitled";
+        return title.replace(/[\\/:*?"<>|@&]/g, "_").slice(0, 120);
+    }
+
+    function splitEd2kFromLine(line) {
+        var out = [];
+        var pattern = /ed2k:\/\/\|file\|[^\s<>"']*?\|\d+\|[a-f0-9]{32}\|(?:[^\s<>"']*?\|)?\//gi;
+        var match;
+        while ((match = pattern.exec(line)) !== null) out.push(match[0]);
+        return out;
+    }
+
+    function collectMdDownloadLinks() {
+        var result = { ed2k: [], magnet: [], other: [] };
+        var seen = new Set();
+        function push(kind, value) {
+            value = String(value || "").trim();
+            if (!value) return;
+            var key = kind + "|" + value.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+            result[kind].push(value);
+        }
+
+        // 1) Discuz 代码块（与原脚本 .blockcode li 等价，但兼容 li/文本混合与换行）
+        var containers = document.querySelectorAll(
+            ".t_f .blockcode, .t_f pre, .t_f code, .t_f .quote, [id^='postmessage_'] .blockcode, [id^='postmessage_'] pre"
+        );
+        containers.forEach(function (box) {
+            var text = String(box.textContent || box.innerText || "")
+                .replace(/&amp;/g, "&").replace(/&nbsp;/g, " ");
+            text.split(/\r?\n/).forEach(function (line) {
+                line = line.trim();
+                if (!line) return;
+                splitEd2kFromLine(line).forEach(function (u) { push("ed2k", u); });
+                var magnets = line.match(/magnet:\?\?[^\s<>"']+/gi) || [];
+                magnets.forEach(function (u) { push("magnet", u); });
+            });
+        });
+
+        // 2) 兜底：正文里任意位置出现的 ed2k / magnet
+        [".t_f", "[id^='postmessage_']"].forEach(function (sel) {
+            document.querySelectorAll(sel).forEach(function (root) {
+                var text = String(root.textContent || "").replace(/&amp;/g, "&");
+                splitEd2kFromLine(text).forEach(function (u) { push("ed2k", u); });
+                (text.match(/magnet:\?\?[^\s<>"']+/gi) || []).forEach(function (u) { push("magnet", u); });
+            });
+        });
+
+        return result;
+    }
+
+    // 原脚本的附件识别逻辑，补上 DOM 兜底（span#attach_* / a#aid*）
+    function collectMdAttachments() {
+        var list = [];
+        var seen = new Set();
+        function push(a) {
+            if (!a || !a.href) return;
+            if (seen.has(a.href)) return;
+            seen.add(a.href);
+            list.push(a);
+        }
+        document.querySelectorAll("span[id^='attach_'] a, [id^='attach_'] a[href]").forEach(push);
+        document.querySelectorAll("a[id^='aid']").forEach(function (a) {
+            if (a.classList.length === 0) push(a);
+        });
+        document.querySelectorAll(".t_f a[href*='mod=attachment'], .t_f a[href*='attachment']").forEach(push);
+        return list;
+    }
+
+    function isNoiseAttachment(a) {
+        var text = String(a.textContent || "");
+        return text.indexOf("目录") > -1 || text.toLowerCase().indexOf("sha1") > -1 ||
+            text.toLowerCase().indexOf(".torrent") > -1;
+    }
+
+    function downloadMdText(content, filename) {
+        var blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), content], { type: "text/plain;charset=utf-8" });
+        var objectUrl = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.download = filename;
+        a.href = objectUrl;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(objectUrl); }, 3000);
+    }
+
+    function buildMdLinkText(links) {
+        var lines = [];
+        links.ed2k.forEach(function (u) { lines.push(u); });
+        links.magnet.forEach(function (u) { lines.push(u); });
+        return lines.join("\r\n");
+    }
+
+    function runMergeDownload(button) {
+        var title = getMdThreadTitle();
+        var links = collectMdDownloadLinks();
+        var attachments = collectMdAttachments().filter(function (a) { return !isNoiseAttachment(a); });
+        var linkCount = links.ed2k.length + links.magnet.length;
+
+        if (!linkCount && !attachments.length) {
+            showToast("❌ 此页没有 ed2k/磁力链接，也没有可下载的附件", "error", 2400);
+            return;
+        }
+
+        if (linkCount) {
+            downloadMdText(buildMdLinkText(links), title + ".txt");
+        }
+
+        if (attachments.length) {
+            // 逐个触发；间隔 800ms，避免浏览器把连续下载判定成弹窗拦截
+            attachments.forEach(function (a, index) {
+                setTimeout(function () { a.click(); }, 900 * index);
+            });
+        }
+
+        var parts = [];
+        if (linkCount) parts.push(links.ed2k.length + " 条 ed2k / " + links.magnet.length + " 条磁力");
+        if (attachments.length) parts.push(attachments.length + " 个附件");
+        showToast("✅ 已开始：" + parts.join(" + "), "success", 2600);
+    }
+
+    function insertMergeDownloadButtons(buttonContainer) {
+        if (!buttonContainer || document.getElementById("bgshMergeDownloadButton")) return;
+        var url = window.location.href;
+        if (!/forum\.php\?mod=viewthread|\/thread-\d+-\d+-\d+\.html/.test(url)) return;
+
+        var mergeButton = createButton("bgshMergeDownloadButton", "⏬ 合并下载", function () {
+            runMergeDownload(mergeButton);
+        });
+        mergeButton.title = "导出 ed2k/磁力到 txt，并逐个下载附件（快捷键 Alt+D）";
+
+        var linksButton = createButton("bgshExportLinksButton", "🔗 仅链接", function () {
+            var links = collectMdDownloadLinks();
+            var text = buildMdLinkText(links);
+            if (!text) { showToast("❌ 此页没有 ed2k/磁力链接", "error", 2000); return; }
+            downloadMdText(text, getMdThreadTitle() + ".txt");
+            showToast("✅ 链接已导出（" + links.ed2k.length + " ed2k / " + links.magnet.length + " 磁力）", "success");
+        });
+        linksButton.title = "只把 ed2k/磁力链接存成 txt";
+
+        var attachButton = createButton("bgshDownloadAttachmentsButton", "📎 仅附件", function () {
+            var list = collectMdAttachments().filter(function (a) { return !isNoiseAttachment(a); });
+            if (!list.length) { showToast("❌ 此页没有可下载附件", "error", 2000); return; }
+            list.forEach(function (a, index) {
+                setTimeout(function () { a.click(); }, 900 * index);
+            });
+            showToast("✅ 开始下载 " + list.length + " 个附件", "success");
+        });
+        attachButton.title = "只下载附件，跳过目录 / sha1 / torrent";
+
+        mergeButton.className = "bgsh-customBtn bgsh-btn-download";
+        linksButton.className = "bgsh-customBtn bgsh-btn-sub";
+        attachButton.className = "bgsh-customBtn bgsh-btn-sub";
+
+        // 放在工具栏末尾，前面加一条分隔线，和上面的通用功能区分开
+        var sep = document.createElement("div");
+        sep.className = "bgsh-toolbar-sep";
+        buttonContainer.appendChild(sep);
+        buttonContainer.appendChild(mergeButton);
+
+        buttonContainer.appendChild(linksButton);
+        buttonContainer.appendChild(attachButton);
+
+        // Alt+D：触发合并下载（原脚本快捷键，冲突时可在设置里关掉）
+        if (!document.documentElement.dataset.bgshMergeHotkeyBound) {
+            document.documentElement.dataset.bgshMergeHotkeyBound = "1";
+            document.addEventListener("keydown", function (event) {
+                if (!event.altKey || event.keyCode !== 68) return;
+                if (!/forum\.php\?mod=viewthread|\/thread-\d+-\d+-\d+\.html/.test(window.location.href)) return;
+                var target = document.getElementById("bgshMergeDownloadButton");
+                if (!target) return;
+                event.preventDefault();
+                event.stopPropagation();
+                target.click();
+            }, true);
+        }
     }
     // #endregion
 
