@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X大哥4.10版+收藏夹
 // @namespace    https://www.sehuatang.net
-// @version      4.12.1
+// @version      4.12.2
 // @description  98堂(原色花堂)官方脚本 高级搜索 作者追更 收藏追更/导出 图片分批懒加载 原图查看 橙金风UI
 // @author       98堂
 // @match        *://*.sehuatang.net/*
@@ -32,7 +32,7 @@
     "use strict";
 
     // #region 全局变量
-    const scriptVer = "v4.12.1";
+    const scriptVer = "v4.12.2";
     let activeTooltips = 0;
     let toastQueue = [];
     let isToastShowing = false;
@@ -9984,6 +9984,34 @@
 
         var typeMap = {};
         var typeNavSeen = {};
+        // 去重键：分类名 + typeid。只按名字去重会把「站点分类栏(#thread_types)」里的
+        // 13 个真分类挡掉，因为主题行里的 th em 先占了这个名字（没有 typeid）。
+        var seenTypeKeys = {};
+
+        function addType(name, typeid) {
+            name = String(name || '').replace(/\s+/g, ' ').trim();
+            if (!name) return false;
+            var key = name + '|' + (typeid || '');
+            if (seenTypeKeys[key]) return false;
+            if (!typeid && typeMap[name] && typeMap[name].typeid) return false;
+            seenTypeKeys[key] = true;
+            if (!typeMap[name] || (typeid && !typeMap[name].typeid)) {
+                typeMap[name] = { name: name, typeid: typeid || null };
+            }
+            return true;
+        }
+
+        // 站点原生分类栏：Discuz 的 <ul id="thread_types" class="ttp bm cl">，
+        // 里面是 <li><a href="...filter=typeid&typeid=NNN">名称<span class="xg1 num">帖子数</span></a>。
+        // 这是最权威的来源，优先入库。
+        document.querySelectorAll('#thread_types a[href*="typeid="], ul.ttp a[href*="typeid="]').forEach(function (a) {
+            var typeid = (a.href.match(/[?&]typeid=(\d+)/) || [])[1];
+            if (!typeid || typeid === '0') return;
+            // 名称去掉尾部的帖子数字
+            var name = (a.textContent || '').replace(/\d+/g, '').replace(/\s+/g, ' ').trim();
+            if (!name || name.length > 20) return;
+            addType(name, typeid);
+        });
 
         var allHrefTypeLinks = document.querySelectorAll('a[href*="typeid="]');
         allHrefTypeLinks.forEach(function (a) {
@@ -9999,10 +10027,7 @@
             var key = '_tid_' + typeid;
             if (typeNavSeen[key]) return;
             typeNavSeen[key] = true;
-
-            if (!typeMap[name]) {
-                typeMap[name] = { name: name, typeid: typeid };
-            }
+            addType(name, typeid);
         });
 
         var emLinks = document.querySelectorAll('th em a[href*="typeid="]');
@@ -10011,9 +10036,7 @@
             if (!name) return;
             var tidMatch = a.href.match(/[?&]typeid=(\d+)/);
             var typeid = tidMatch ? tidMatch[1] : null;
-            if (!typeMap[name]) {
-                typeMap[name] = { name: name, typeid: typeid };
-            }
+            addType(name, typeid);
         });
 
         var xg1s = document.querySelectorAll('span.xg1');
@@ -10021,8 +10044,8 @@
             var m = span.textContent.match(/\[([^\]]+)\]/);
             if (m) {
                 var name = m[1].trim();
-                if (!name || typeMap[name]) return;
-                typeMap[name] = { name: name };
+                if (!name) return;
+                addType(name, null);
             }
         });
 
@@ -10031,8 +10054,7 @@
             if (em.querySelector('a')) return;
             var text = em.textContent.replace(/^\[|\]$/g, '').trim();
             if (!text || text.length > 8) return;
-            if (typeMap[text]) return;
-            typeMap[text] = { name: text };
+            addType(text, null);
         });
 
         var typeSelect = document.querySelector('select[name="typeid"], select#typeid');
@@ -10042,9 +10064,7 @@
                 var val = opt.value;
                 var text = opt.textContent.trim();
                 if (!val || val === '0' || !text || text === '全部' || text === '选择分类') return;
-                if (!typeMap[text]) {
-                    typeMap[text] = { name: text, typeid: val };
-                }
+                addType(text, val);
             });
         }
 
@@ -10107,6 +10127,14 @@
             }
             pillHtml += '<a class="bgsh-type-pill' + (isActive ? ' active' : '') + '" href="' + href.replace(/"/g, '&quot;') + '">' + name + '</a>';
         });
+
+        // 原生分类栏已经能胜任时，默认不重复渲染（站点自己的 #thread_types 更贴合版块），
+        // 想要双重保险可在设置里强制显示。折叠状态记忆仍然生效。
+        var nativeTypeNav = document.querySelector('#thread_types, ul.ttp');
+        if (nativeTypeNav && !window.__bgshForceTypeFilter) {
+            var nativeItems = nativeTypeNav.querySelectorAll('a[href*="typeid="]').length;
+            if (nativeItems >= Object.keys(typeMap).length) return;
+        }
 
         filterBar.innerHTML =
             '<div class="bgsh-type-filter-header">' +
