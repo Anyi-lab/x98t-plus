@@ -54,6 +54,10 @@ t("toast：正文重复 emoji 会被剥掉", /lead\[1\] === autoIcon/.test(code)
 t("合并下载：复制标题按钮", /bgshCopyThreadTitleButton/.test(code));
 t("合并下载：仅附件默认不挂载", /if \(window\.__bgshShowAttachButton\)/.test(code));
 
+t("预览：只认标题链接 a.xst", /!a\.classList\.contains\("xst"\)/.test(code));
+t("预览：父级优先 tbody#normalthread_", /tbody\[id\^="normalthread_"\], tbody\[id\^="stickthread_"\]'\)/.test(code));
+t("预览：找不到链接时给提示", /__bgshPreviewWarned/.test(code));
+
 // 5) 版本一致性
 const v = (code.match(/^\/\/\s*@version\s+(\S+)/m) || [])[1];
 const sv = (code.match(/const scriptVer = "v([^"]+)";/) || [])[1];
