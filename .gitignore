@@ -4,3 +4,6 @@
 *.tmp
 *.log
 .DS_Store
+
+# 本地原件备份（不推远端）
+.backup/
