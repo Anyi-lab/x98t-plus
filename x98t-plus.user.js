@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X大哥4.10版+收藏夹
 // @namespace    https://www.sehuatang.net
-// @version      4.12.2
+// @version      4.12.3
 // @description  98堂(原色花堂)官方脚本 高级搜索 作者追更 收藏追更/导出 图片分批懒加载 原图查看 橙金风UI
 // @author       98堂
 // @match        *://*.sehuatang.net/*
@@ -32,7 +32,7 @@
     "use strict";
 
     // #region 全局变量
-    const scriptVer = "v4.12.2";
+    const scriptVer = "v4.12.3";
     let activeTooltips = 0;
     let toastQueue = [];
     let isToastShowing = false;
@@ -2223,6 +2223,8 @@
             }
 
             /* ----- 板块筛选栏 (新增) ----- */
+            /* 宽度对齐站点原生容器（#ct 版块内容区），不再写死 960px。
+               站点宽度是流式的，写死像素会出现「插件块比论坛主体窄/宽一截」。 */
             .bgsh-board-filter {
                 background: var(--bgsh-bg-light);
                 backdrop-filter: blur(24px);
@@ -2230,8 +2232,10 @@
                 border-radius: var(--bgsh-radius);
                 border: 1px solid var(--bgsh-border-light);
                 box-shadow: var(--bgsh-shadow);
-                margin: 10px auto 18px auto;
-                max-width: 960px;
+                box-sizing: border-box;
+                width: auto;
+                max-width: none;
+                margin: 10px 0 18px 0;
                 overflow: hidden;
                 font-family: var(--bgsh-font);
                 transition: all 0.3s ease;
@@ -2385,8 +2389,10 @@
                 border-radius: var(--bgsh-radius);
                 border: 1px solid var(--bgsh-border-light);
                 box-shadow: var(--bgsh-shadow);
-                margin: 10px auto 18px auto;
-                max-width: 960px;
+                box-sizing: border-box;
+                width: auto;
+                max-width: none;
+                margin: 10px 0 18px 0;
                 overflow: hidden;
                 font-family: var(--bgsh-font);
                 transition: all 0.3s ease;
