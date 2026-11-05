@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X大哥4.10版+收藏夹
 // @namespace    https://www.sehuatang.net
-// @version      4.13.0
+// @version      4.13.1
 // @description  98堂(原色花堂)官方脚本 高级搜索 作者追更 收藏追更/导出 图片分批懒加载 原图查看 橙金风UI
 // @author       98堂
 // @match        *://*.sehuatang.net/*
@@ -32,7 +32,7 @@
     "use strict";
 
     // #region 全局变量
-    const scriptVer = "v4.13.0";
+    const scriptVer = "v4.13.1";
     let activeTooltips = 0;
     let toastQueue = [];
     let isToastShowing = false;
@@ -125,9 +125,25 @@
             info: 'ℹ️'
         };
 
+        // 调用处大量消息本身以 emoji 开头（如 "✅ 已开始…"），而这里又按 type 自动加图标，
+        // 结果同一个 emoji 出现两次。统一在渲染前处理：
+        //   - 正文开头与自动图标相同 -> 去掉正文里那个，只保留自动图标
+        //   - 正文开头是别的 emoji -> 保留正文的，隐藏自动图标（尊重调用处意图）
+        var autoIcon = iconMap[type] || 'ℹ️';
+        var lead = String(message).match(/^\s*(\p{Extended_Pictographic}️?)\s*/u);
+        var showAutoIcon = true;
+        var bodyMessage = String(message);
+        if (lead) {
+            if (lead[1] === autoIcon) {
+                bodyMessage = bodyMessage.replace(lead[0], '');
+            } else {
+                showAutoIcon = false;
+            }
+        }
+
         toast.innerHTML = `
-            <span class="bgsh-toast-icon">${iconMap[type] || 'ℹ️'}</span>
-            <span class="bgsh-toast-message">${message}</span>
+            <span class="bgsh-toast-icon"${showAutoIcon ? '' : ' hidden'}>${autoIcon}</span>
+            <span class="bgsh-toast-message">${bodyMessage}</span>
             <span class="bgsh-toast-progress"></span>
         `;
 
@@ -1300,6 +1316,7 @@
                 scrollbar-width: thin;
             }
             /* 帖子页按钮多，分组：分隔线与下载组高亮，避免一长条同色按钮糊成一片 */
+            .bgsh-toast-icon[hidden] { display: none !important; }
             .bgsh-toolbar .bgsh-toolbar-sep {
                 width: 34px;
                 height: 1px;
@@ -7481,9 +7498,19 @@
         });
         attachButton.title = "只下载附件，跳过目录 / sha1 / torrent";
 
+        var titleButton = createButton("bgshCopyThreadTitleButton", "🏷️ 复制标题", function () {
+            var title = getMdThreadTitle();
+            copyToClipboard(title, function () {
+                showToast("标题已复制", "success", 1600);
+            }, function () {
+                showToast("复制失败，浏览器拒绝了剪贴板权限", "error", 2400);
+            });
+        });
+        titleButton.title = "复制帖子标题（文件名安全化处理）";
+        titleButton.className = "bgsh-customBtn bgsh-btn-sub";
+
         mergeButton.className = "bgsh-customBtn bgsh-btn-download";
         linksButton.className = "bgsh-customBtn bgsh-btn-sub";
-        attachButton.className = "bgsh-customBtn bgsh-btn-sub";
 
         // 放在工具栏末尾，前面加一条分隔线，和上面的通用功能区分开
         var sep = document.createElement("div");
@@ -7492,7 +7519,13 @@
         buttonContainer.appendChild(mergeButton);
 
         buttonContainer.appendChild(linksButton);
-        buttonContainer.appendChild(attachButton);
+        // 「仅附件」默认不挂：工具栏上方已有原生「📥 下载附件」。
+        // 需要时在控制台执行 window.__bgshShowAttachButton = true 再刷新。
+        if (window.__bgshShowAttachButton) {
+            attachButton.className = "bgsh-customBtn bgsh-btn-sub";
+            buttonContainer.appendChild(attachButton);
+        }
+        buttonContainer.appendChild(titleButton);
 
         // Alt+D：触发合并下载（原脚本快捷键，冲突时可在设置里关掉）
         if (!document.documentElement.dataset.bgshMergeHotkeyBound) {

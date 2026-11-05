@@ -50,6 +50,10 @@ t("isSpaceThreadPage 存在", /function isSpaceThreadPage\(url\)/.test(code));
 t("空间页判定按 URL 参数", /const isSpacePage = \(\) => isSpaceThreadPage\(window\.location\.href\);/.test(code));
 t("空间页翻页后补图", /isMySpacePage" \|\| pageName == "isSpacePage"\) \{[\s\S]{0,220}?displayAdvanThreadImages\(settings\);/.test(code));
 
+t("toast：正文重复 emoji 会被剥掉", /lead\[1\] === autoIcon/.test(code) && /showAutoIcon = false/.test(code));
+t("合并下载：复制标题按钮", /bgshCopyThreadTitleButton/.test(code));
+t("合并下载：仅附件默认不挂载", /if \(window\.__bgshShowAttachButton\)/.test(code));
+
 // 5) 版本一致性
 const v = (code.match(/^\/\/\s*@version\s+(\S+)/m) || [])[1];
 const sv = (code.match(/const scriptVer = "v([^"]+)";/) || [])[1];
