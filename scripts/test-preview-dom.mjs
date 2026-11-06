@@ -26,14 +26,17 @@ window.fetch = async (href) => {
   calls++;
   // 第一次返回安全确认页，第二次（写完 cookie）返回真页
   const body = calls === 1 ? SAFE_PAGE : vtHtml;
-  return { text: async () => body };
+  return { ok: true, text: async () => body };
 };
 
-// —— 被测函数：从 userscript 里原样取出来 ——
+// —— 被测函数：从 userscript 里原样取出 fetchPageHTML + fetchThreadPageHTML ——
 const src = fs.readFileSync('x98t-plus.user.js','utf8');
-const fnSrc = src.slice(src.indexOf('    async function fetchThreadPageHTML'),
+const fnSrc = src.slice(src.indexOf('    async function fetchPageHTML'),
                         src.indexOf('    // 清掉「读了但没图」的空行'));
-const fetchThreadPageHTML = new Function('document','fetch','AbortSignal', `return (${fnSrc.trim().replace(/^async function fetchThreadPageHTML/, 'async function fetchThreadPageHTML')})`)(document, window.fetch, AbortSignal);
+const { fetchThreadPageHTML, fetchPageHTML } = new Function(
+  'document', 'fetch', 'AbortSignal',
+  `${fnSrc}\nreturn { fetchThreadPageHTML, fetchPageHTML };`
+)(document, (...args) => window.fetch(...args), AbortSignal);
 
 let fails = 0;
 const check = (ok, msg) => { console.log((ok ? 'PASS ' : 'FAIL ') + msg); if (!ok) fails++; };
@@ -44,6 +47,26 @@ check(calls === 2, `安全确认页被识别并重取（fetch 调用 ${calls} �
 check(!html.includes('var safeid='), '最终拿到的是正文而不是确认页');
 check(/class="t_f"/.test(html), '正文里存在 .t_f');
 check(/_safe=TESTSAFE123/.test(cookieSet || ''), '按站点自己的方式写入了 _safe cookie');
+
+// 正常页面不能触发重取：多抓一次就是白吃一次请求预算（站点有限流）
+calls = 0;
+window.fetch = async () => { calls++; return { ok: true, text: async () => vtHtml }; };
+const plain = await fetchPageHTML('https://www.sehuatang.org/forum.php?mod=guide', {});
+check(calls === 1, `普通页面只抓 1 次，不重复请求（实际 ${calls} 次）`);
+check(plain === vtHtml, '普通页面原样返回');
+
+// 非 2xx 必须抛错，交给调用处走「加载失败，点击重试」分支
+calls = 0;
+let threw = false;
+window.fetch = async () => ({ ok: false, status: 503, text: async () => '' });
+try { await fetchPageHTML('https://www.sehuatang.org/forum.php?mod=forumdisplay&fid=95', {}); }
+catch (e) { threw = /503/.test(String(e)); }
+check(threw, 'HTTP 503 抛出错误（错误信息带状态码）');
+window.fetch = async (href) => {
+  calls++;
+  const body = calls === 1 ? SAFE_PAGE : vtHtml;
+  return { ok: true, text: async () => body };
+};
 
 // —— 图片提取（照抄脚本里的条件）——
 const doc2 = new JSDOM(html).window.document;

@@ -10,7 +10,9 @@ const CASES = [
 const src = fs.readFileSync('x98t-plus.user.js', 'utf8');
 const body = (() => {
   const start = src.indexOf('        var typeMap = {};');
-  const end = src.indexOf('        var typeNames = Object.keys(typeMap);');
+  // 结尾标记只取到 `Object.keys(typeMap)`，后面可能接 .filter(...) 之类，
+  // 写死整行会在改代码后直接找不到切片而误报失败。
+  const end = src.indexOf('        var typeNames = Object.keys(typeMap)');
   if (start < 0 || end < 0) { console.log('FAIL 源码里找不到分类收集段'); process.exit(1); }
   return src.slice(start, end);
 })();
@@ -102,6 +104,25 @@ if (!fs.existsSync(HREF_FIXTURE)) {
     check(broken.length === 0, `typeid 参数唯一且非空${broken.length ? '：' + broken.slice(0, 2).join(' | ') : ''}`);
     check(lostSort.length === 0, `保留当前排序${lostSort.length ? '：' + lostSort.slice(0, 3).join(',') : ''}`);
   }
+
+  // 路径式分页：forum-95-2.html 的页码写在路径里，删 query 的 page 删不掉它。
+  // 原生分类链接一律是第 1 页，点分类不该被带到不存在的第 2 页。
+  const pathPageUrl = 'https://www.sehuatang.org/forum-95-2.html?filter=typeid&typeid=710&orderby=dateline&ascdesc=desc';
+  const pathRun = runFilter(hHtml, '95', pathPageUrl);
+  const stillPage2 = pathRun.pills
+    .map(p => new URL(p.getAttribute('href') || '', pathPageUrl))
+    .filter(u => /-\d+-/.test(u.pathname) && !/-1\.html$/.test(u.pathname))
+    .map(u => u.pathname);
+  console.log(`\n[路径分页 ${pathRun.pills.length} 个按钮]`);
+  check(stillPage2.length === 0, `切分类回到第 1 页${stillPage2.length ? '：' + stillPage2.slice(0, 3).join(',') : ''}`);
+  // 路径式地址里 fid 在路径上（forum-95-1.html），不在 query 里，两种形态都算合法。
+  const badFid = pathRun.pills.filter(p => {
+    const u = new URL(p.getAttribute('href') || '', pathPageUrl);
+    const q = u.searchParams.get('fid');
+    const pathFid = (u.pathname.match(/\/forum-(\d+)-\d+\.html$/) || [])[1];
+    return !(/^\d+$/.test(q || '') || /^\d+$/.test(pathFid || ''));
+  }).map(p => p.textContent);
+  check(badFid.length === 0, `路径分页下 fid 依然合法${badFid.length ? '：' + badFid.slice(0, 3).join(',') : ''}`);
 }
 
 console.log(fails ? `\nRESULT: ${fails} failed` : '\nRESULT: all passed');

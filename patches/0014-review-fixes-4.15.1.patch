@@ -1,0 +1,354 @@
+diff --git a/x98t-plus.user.js b/x98t-plus.user.js
+index 55c51da..1642049 100644
+--- a/x98t-plus.user.js
++++ b/x98t-plus.user.js
+@@ -1,7 +1,7 @@
+ // ==UserScript==
+ // @name         X大哥4.10版+收藏夹
+ // @namespace    https://www.sehuatang.net
+-// @version      4.15.0
++// @version      4.15.1
+ // @description  98堂(原色花堂)官方脚本 高级搜索 作者追更 收藏追更/导出 图片分批懒加载 原图查看 橙金风UI
+ // @author       98堂
+ // @match        *://*.sehuatang.net/*
+@@ -36,7 +36,7 @@
+     "use strict";
+ 
+     // #region 全局变量
+-    const scriptVer = "v4.15.0";
++    const scriptVer = "v4.15.1";
+     let activeTooltips = 0;
+     let toastQueue = [];
+     let isToastShowing = false;
+@@ -108,6 +108,30 @@
+     // #endregion
+ 
+     // #region Toast 通知系统
++    // showWindow 是站点自带 common.js 提供的全局函数，脚本自己没有实现。
++    // 页面脚本没加载成功时（安全确认页、被拦、懒加载失败）它是 undefined，
++    // 点按钮只会抛 ReferenceError —— 用户看到的就是「点了没反应」。
++    // 这里统一兜底：弹窗函数不可用就新标签打开。
++    function openSiteWindow(kind, url) {
++        var extra = Array.prototype.slice.call(arguments, 2);
++        var pageWin = (typeof unsafeWindow !== "undefined" && unsafeWindow) || window;
++        if (pageWin && typeof pageWin.showWindow === "function") {
++            try {
++                pageWin.showWindow.apply(pageWin, [kind, url].concat(extra));
++                return;
++            } catch (error) {
++                console.warn("[98T] showWindow 调用失败，改为新标签打开", error);
++            }
++        }
++        var abs = "";
++        try {
++            abs = new URL(url, window.location.href).href;
++        } catch (error) {
++            abs = String(url || "");
++        }
++        if (abs) window.open(abs, "_blank", "noopener");
++    }
++
+     function showToast(message, type = 'info', duration = 3000) {
+         toastQueue.push({ message, type, duration });
+         processToastQueue();
+@@ -147,9 +171,13 @@
+ 
+         toast.innerHTML = `
+             <span class="bgsh-toast-icon"${showAutoIcon ? '' : ' hidden'}>${autoIcon}</span>
+-            <span class="bgsh-toast-message">${bodyMessage}</span>
++            <span class="bgsh-toast-message"></span>
+             <span class="bgsh-toast-progress"></span>
+         `;
++        // 正文一律走 textContent：消息里有从页面抓来的标题、作者名、版块名，
++        // 这些内容里出现 < 或 & 时走 innerHTML 会被当成标签吃掉（甚至执行），
++        // 表现就是提示条文字残缺或排版塌掉。
++        toast.querySelector('.bgsh-toast-message').textContent = bodyMessage.trim();
+ 
+         document.body.appendChild(toast);
+         requestAnimationFrame(() => {
+@@ -4020,9 +4048,9 @@
+             try {
+                 var url = normalizeURL(data.url);
+                 if (!url) return false;
+-                var response = await fetch(url, { credentials: "include" });
+-                if (!response.ok) return false;
+-                var html = await response.text();
++                // 走带安全页重试的抓取：收藏页补作者也是抓自己站的帖子页，
++                // 拿到 18+ 确认页时会解析不到 .authi，作者就一直是空的。
++                var html = await fetchPageHTML(url, { signal: AbortSignal.timeout(9000) });
+                 var doc = new DOMParser().parseFromString(html, "text/html");
+                 var author = qs(".pls .authi a.xw1, .pls .authi a", doc)?.textContent?.trim() || "";
+                 if (author) { favCache[favid].author = author; return true; }
+@@ -5256,7 +5284,7 @@
+     }
+ 
+     async function gradeManual(tid, pid) {
+-        showWindow("rate", "forum.php?mod=misc&action=rate&tid=" + tid + "&pid=" + pid, "get", -1);
++        openSiteWindow("rate", "forum.php?mod=misc&action=rate&tid=" + tid + "&pid=" + pid, "get", -1);
+         return false;
+     }
+ 
+@@ -6093,7 +6121,7 @@
+         return createButton("fastReplyButton", "📝 快速回复", function () {
+             let fid = getFidFromElement();
+             const tid = extractTid(window.location.href);
+-            showWindow("reply", `forum.php?mod=post&action=reply&fid=${fid}&tid=${tid}`);
++            openSiteWindow("reply", `forum.php?mod=post&action=reply&fid=${fid}&tid=${tid}`);
+         }, "bgsh-quickReplyToPostBtn");
+     }
+ 
+@@ -6101,7 +6129,7 @@
+         return createButton("fastPMButton", "💬 快速私信", function () {
+             let fid = getFidFromElement();
+             const tid = extractTid(window.location.href);
+-            showWindow("sendpm",
++            openSiteWindow("sendpm",
+                 `home.php?mod=spacecp&ac=pm&op=showmsg&handlekey=showmsg_${touid}&touid=${touid}&pmid=0&daterange=2&pid=${pid}&tid=${tid}`);
+         }, "bgsh-fastPMButtonBtn");
+     }
+@@ -6110,7 +6138,7 @@
+         return createButton("viewRatingsButton", "⭐ 查看评分", function () {
+             let fid = getFidFromElement();
+             const tid = extractTid(window.location.href);
+-            showWindow("viewratings", `forum.php?mod=misc&action=viewratings&tid=${tid}&pid=${pid}`);
++            openSiteWindow("viewratings", `forum.php?mod=misc&action=viewratings&tid=${tid}&pid=${pid}`);
+         });
+     }
+ 
+@@ -6118,7 +6146,7 @@
+         return createButton("payLogButton", "💰 购买记录", function () {
+             let fid = getFidFromElement();
+             const tid = extractTid(window.location.href);
+-            showWindow("pay", `forum.php?mod=misc&action=viewpayments&tid=${tid}&pid=${pid}`);
++            openSiteWindow("pay", `forum.php?mod=misc&action=viewpayments&tid=${tid}&pid=${pid}`);
+         });
+     }
+ 
+@@ -6973,7 +7001,7 @@
+             if (pid) {
+                 let fid = getFidFromElement();
+                 const tid = extractTid(window.location.href);
+-                showWindow("reply", `forum.php?mod=post&action=reply&fid=${fid}&tid=${tid}&repquote=${pid}`);
++                openSiteWindow("reply", `forum.php?mod=post&action=reply&fid=${fid}&tid=${tid}&repquote=${pid}`);
+             } else {
+                 showToast("❌ 未找到回复元素", "error");
+             }
+@@ -6983,8 +7011,10 @@
+     function createSetAnswerToPostButton(post) {
+         return createButton("setAnswerToPost", "✅ 最佳答案", () => {
+             let pid = getTableIdFromElement(post);
+-            if (pid) setanswer(pid, "");
+-            else showToast("❌ 未找到最佳答案", "error");
++            if (!pid) { showToast("❌ 未找到最佳答案", "error"); return; }
++            // setanswer 同样是站点全局函数，缺了就直接提示，别让按钮静默失效。
++            if (typeof setanswer === "function") setanswer(pid, "");
++            else showToast("⚠️ 站点脚本未就绪，请刷新页面后重试", "warning");
+         }, "bgsh-setAnswerToPostBtn");
+     }
+ 
+@@ -6993,7 +7023,7 @@
+             let pid = getTableIdFromElement(post);
+             if (pid) {
+                 const tid = extractTid(window.location.href);
+-                showWindow("reportad", `plugin.php?id=pc_reportad&tid=${tid}&pid=${pid}`);
++                openSiteWindow("reportad", `plugin.php?id=pc_reportad&tid=${tid}&pid=${pid}`);
+             } else {
+                 showToast("❌ 未找到举报元素", "error");
+             }
+@@ -7031,7 +7061,7 @@
+             if (pid) {
+                 let fid = getFidFromElement();
+                 const tid = extractTid(window.location.href);
+-                showWindow(`miscreport${pid}`, `misc.php?mod=report&rtype=post&rid=${pid}&tid=${tid}&fid=${fid}`);
++                openSiteWindow(`miscreport${pid}`, `misc.php?mod=report&rtype=post&rid=${pid}&tid=${tid}&fid=${fid}`);
+             } else {
+                 showToast("❌ 未找到回复元素", "error");
+             }
+@@ -7551,7 +7581,7 @@
+     function createFastPostButton() {
+         return createButton("fastPostButton", "✏️ 快速发帖", function () {
+             let fid = getFidFromElement();
+-            showWindow("newthread", `forum.php?mod=post&action=newthread&fid=${fid}`);
++            openSiteWindow("newthread", `forum.php?mod=post&action=newthread&fid=${fid}`);
+         });
+     }
+ 
+@@ -7779,17 +7809,28 @@
+     // 预览功能靠 fetch 拉帖子页取图，拿到的是这个确认页（没有 .t_f），
+     // 于是永远提取不到图片 —— 导读/版块/收藏的预览图就整片消失。
+     // 这里照它自己的做法过闸：取出 safeid → 写 _safe → 重取一次。
+-    async function fetchThreadPageHTML(href) {
+-        var opts = { signal: AbortSignal.timeout(9000), credentials: "same-origin" };
+-        var html = await (await fetch(href, opts)).text();
++    // 站点有一次性的 18+ 安全确认页（static/safe/js/mainv2.js）：
++    // 响应里带 `var safeid='xxx'`，页面脚本把它写成 _safe cookie 后 reload。
++    // fetch 抓页面同样会拿到这张确认页（约 2.4KB、没有任何主题行）。
++    // 所有「后台抓自己站页面」的路径都必须重试一次，否则：
++    //   预览 -> 安静地没有图；自动翻页 -> 找不到主题行，误判「已加载全部」。
++    async function fetchPageHTML(href, options) {
++        var opts = Object.assign({ credentials: "same-origin" }, options || {});
++        var response = await fetch(href, opts);
++        if (!response.ok) throw new Error("HTTP " + response.status);
++        var html = await response.text();
+         var m = html.match(/var safeid='([^']+)'/);
+-        if (m) {
+-            try {
+-                document.cookie = "_safe=" + m[1] + "; path=/; max-age=86400; SameSite=Lax";
+-            } catch (e) {}
+-            html = await (await fetch(href, opts)).text();
+-        }
+-        return html;
++        if (!m) return html;
++        try {
++            document.cookie = "_safe=" + m[1] + "; path=/; max-age=86400; SameSite=Lax";
++        } catch (e) {}
++        response = await fetch(href, opts);
++        if (!response.ok) throw new Error("HTTP " + response.status);
++        return await response.text();
++    }
++
++    async function fetchThreadPageHTML(href) {
++        return fetchPageHTML(href, { signal: AbortSignal.timeout(9000) });
+     }
+ 
+     // 清掉「读了但没图」的空行，避免预览行越积越多
+@@ -7965,18 +8006,20 @@
+                     var previewRow = document.createElement("tr");
+                     previewRow.className = "bgsh-my-post-preview-row";
+                     previewRow.dataset.bgshPreviewRowTid = tid;
+-                    var previewCell = document.createElement("td");
+-                    var totalColumns = Array.from(tableRow.children).reduce(function(total, cell) {
++                    // 变量名带 my 前缀：下面「表格行布局」那条分支也在同一个函数作用域里，
++                    // 用 var 重复声明同名变量虽然合法，但谁改成 let 就会直接 TDZ 崩。
++                    var myPreviewCell = document.createElement("td");
++                    var myTotalColumns = Array.from(tableRow.children).reduce(function(total, cell) {
+                         return total + (parseInt(cell.getAttribute("colspan"), 10) || 1);
+                     }, 0);
+-                    previewCell.colSpan = Math.max(1, totalColumns);
+-                    var host = document.createElement("div");
+-                    host.className = "bgsh-my-post-preview-host";
+-                    host.dataset.bgshPreviewHostTid = tid;
+-                    previewCell.appendChild(host);
+-                    previewRow.appendChild(previewCell);
++                    myPreviewCell.colSpan = Math.max(1, myTotalColumns);
++                    var myHost = document.createElement("div");
++                    myHost.className = "bgsh-my-post-preview-host";
++                    myHost.dataset.bgshPreviewHostTid = tid;
++                    myPreviewCell.appendChild(myHost);
++                    previewRow.appendChild(myPreviewCell);
+                     tableRow.insertAdjacentElement("afterend", previewRow);
+-                    return host;
++                    return myHost;
+                 }
+             }
+             // 表格行布局（导读 / 版块 / 收藏）：用一条新的 <tr><td colspan> 承载预览。
+@@ -9849,9 +9892,9 @@
+             console.log("[98T] 加载下一页:", url);
+ 
+             try {
+-                const response = await fetch(url, { credentials: "include" });
+-                if (!response.ok) throw new Error("HTTP " + response.status);
+-                const html = await response.text();
++                // 走带安全页重试的抓取：中途拿到 18+ 确认页时不能当成「没有新内容」，
++                // 否则会误报「已加载全部 N 页」，把后面的页全吞掉。
++                const html = await fetchPageHTML(url, { signal: AbortSignal.timeout(15000) });
+ 
+                 updatePagination(html);
+ 
+@@ -10329,6 +10372,12 @@
+         ['typeid', 'filter', 'page'].forEach(function (name) {
+             url.searchParams.delete(name);
+         });
++        // 路径式分页 /forum-95-2.html 的页码在路径里，删掉 query 的 page 删不掉它。
++        // 原生分类链接一律指向第 1 页，这里对齐：切分类或回「全部」都从第 1 页开始，
++        // 否则在小分类上会被带到根本不存在的第 2 页。
++        url.pathname = url.pathname.replace(/^(\/forum-\d+-)\d+(\.html)$/, function (all, head, tail) {
++            return head + '1' + tail;
++        });
+         return url.href;
+     }
+ 
+@@ -10373,20 +10422,31 @@
+ 
+         // Discuz 原生分类链接是 <a>名称<span class="xg1 num">165553</span></a>，
+         // 直接读 textContent 会把帖子数拼进名字。这里先克隆、拆掉计数节点再取名。
++        // 注意只能拆「计数节点」：有的模板把分类名本身包在 <span class="xw1"> 里，
++        // 早先那种「所有 span/em 一律删」会把名字一起删光，该分类直接丢失。
+         function typeNameFromAnchor(a) {
+             if (!a) return '';
+             var box = a.cloneNode(true);
+-            box.querySelectorAll('.xg1, .num, .xi1, em, span').forEach(function (n) {
+-                if (!n.querySelector('font')) n.remove();
++            box.querySelectorAll('.xg1, .num, .xi1').forEach(function (n) { n.remove(); });
++            box.querySelectorAll('span, em').forEach(function (n) {
++                if (n.querySelector('font, .xg1')) return;
++                if (/^\s*\d+\s*$/.test(n.textContent || '')) n.remove();
+             });
+             return (box.textContent || '').replace(/\s+/g, ' ').trim();
+         }
+ 
+         function addType(name, typeid) {
+-            name = String(name || '').replace(/\s+/g, ' ').trim();
++            // 站上不少模板把分类写成「[分类名]」，方括号是装饰不是名字的一部分。
++            // 统一在这里剥掉：只靠某一条扫描路径自己剥，另一条先入库的带括号名字
++            // 会因为 typeid 已占用而胜出，筛选栏里就出现「[新分类]」这种条目。
++            name = String(name || '').replace(/^[\s\[【]+|[\s\]】]+$/g, '').replace(/\s+/g, ' ').trim();
+             if (!name) return false;
+             // 纯数字不是分类名，是「帖子数」被单独抠出来的残渣（如截图里那个 "2"）
+             if (/^\d+$/.test(name)) return false;
++            // typeid=0 在 Discuz 里等价于「全部」，不是一个分类。
++            // 主题行的 <em><a href="...typeid=0">[无分类]</a></em> 会走到这里，
++            // 收进去就多出一个「点开仍是全部」的假分类。
++            if (typeid && String(typeid) === '0') return false;
+             // 同一个 typeid 只允许一个名字。原生分类栏的 <a> 里带着
+             // <span class="xg1 num">165553</span>，textContent 会拼成
+             // 「色情分享165553」；另一条扫描路径又抓到干净的「色情分享」，
+@@ -10474,36 +10534,25 @@
+             });
+         }
+ 
+-        if (Object.keys(typeMap).length === 0) {
++        // 只有拿得到 typeid 的分类才真的能筛选。名字扫得到、typeid 扫不到的
++        // （主题行里裸的 <em>文本</em>）收进来只会得到一个「点开还是全部」的假分类，
++        // 这里直接不渲染，头部计数也跟着变准。
++        var typeNames = Object.keys(typeMap).filter(function (name) {
++            return !!typeMap[name].typeid;
++        });
++
++        if (typeNames.length === 0) {
+             showToast('📭 此板块暂无主题分类可筛选', 'info', 2000);
+             return;
+         }
+ 
+-        var typeNames = Object.keys(typeMap);
+-
+-        var typeHrefMap = {};
+-        var allTypeLinks = document.querySelectorAll('a[href*="typeid="]');
+-        allTypeLinks.forEach(function (a) {
+-            var name = a.textContent.trim();
+-            if (!name) return;
+-            if (typeMap[name]) {
+-                typeHrefMap[name] = a.href;
+-            }
+-        });
+-
+-        var baseUrl = stripTypeParams(window.location.href);
+-
+-        // 有 typeid 的一律自己重建，不直接沿用页面上抓来的 a.href。
++        // 分类链接一律自己重建，不沿用页面上抓来的 a.href：
+         // 页面里那类链接常出自主题行的 <em><a href=...typeid=710></a></em>，
+-        // 它只带 fid/filter/typeid，会把当前页的 orderby/ascdesc 丢掉；
++        // 只带 fid/filter/typeid，会把当前页的 orderby/ascdesc 丢掉，
+         // 点一下就跳回默认排序，看起来像「排序自己变了」。
++        var typeHrefMap = {};
+         typeNames.forEach(function (name) {
+-            var info = typeMap[name];
+-            if (info.typeid) {
+-                typeHrefMap[name] = buildTypeHref(info.typeid);
+-            } else if (!typeHrefMap[name]) {
+-                typeHrefMap[name] = stripTypeParams(window.location.href);
+-            }
++            typeHrefMap[name] = buildTypeHref(typeMap[name].typeid);
+         });
+ 
+         var currentTypeid = null;

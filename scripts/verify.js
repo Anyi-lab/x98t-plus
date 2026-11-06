@@ -85,6 +85,33 @@ t("分类：URL 参数级重建（不再正则删整串）", /function stripType
 t("分类：不再用 =\\d* 的老删参正则", !/\(typeid\|filter\|page\)=\\d\*/.test(code.replace(/\/\/.*$/gm, "")));
 t("翻页：空值参数不复制到链接上", /if \(value !== null && value !== ""\) target\.searchParams\.set/.test(code));
 
+// 4.15.1 复查修复
+t("翻页：走带安全页重试的 fetchPageHTML", /async function fetchPageHTML/.test(code) && /const html = await fetchPageHTML\(url, \{ signal/.test(code));
+const loadNextSrc = (() => {
+  const a = code.indexOf("async function loadNextPage(");
+  const b = code.indexOf("function checkAndLoad(", a);
+  return a >= 0 && b > a ? code.slice(a, b) : "";
+})();
+t("翻页：loadNextPage 里没有裸 fetch", loadNextSrc.length > 0 && loadNextSrc.indexOf("await fetch(") === -1 && loadNextSrc.indexOf("fetchPageHTML(") > -1);
+const favAuthorSrc = (() => {
+  const a = code.indexOf("async function fillMissingAuthors(");
+  const b = code.indexOf("var worker = async function()", a);
+  return a >= 0 && b > a ? code.slice(a, b) : "";
+})();
+t("收藏补作者：同样走 fetchPageHTML", favAuthorSrc.length > 0 && favAuthorSrc.indexOf("fetchPageHTML(") > -1 && favAuthorSrc.indexOf("await fetch(") === -1);
+t("预览：fetchThreadPageHTML 复用 fetchPageHTML", /return fetchPageHTML\(href, \{ signal: AbortSignal\.timeout\(9000\) \}\)/.test(code));
+t("提示条：正文改用 textContent（不再拼 innerHTML）", /querySelector\('\.bgsh-toast-message'\)\.textContent = bodyMessage/.test(code) && code.indexOf('bgsh-toast-message">${bodyMessage}') === -1);
+t("弹窗：没有裸 showWindow 调用", !/(^|[^.\w])showWindow\(/m.test(code.replace(/\/\/.*$/gm, "")));
+t("弹窗：openSiteWindow 兜底存在", /function openSiteWindow/.test(code) && code.indexOf('typeof pageWin.showWindow === "function"') > -1);
+t("最佳答案：setanswer 有 typeof 守卫", code.indexOf('typeof setanswer === "function"') > -1);
+t("分类：addType 统一剥方括号", code.indexOf("/^[\\s\\[【]+|[\\s\\]】]+$/g") > -1);
+t("分类：typeid=0 不入库（0 即「全部」）", code.indexOf("if (typeid && String(typeid) === '0') return false;") > -1);
+t("分类：取名字不再无差别删 span/em", code.indexOf("'.xg1, .num, .xi1, em, span'") === -1 && code.indexOf("if (/^\\s*\\d+\\s*$/.test(n.textContent || '')) n.remove();") > -1);
+t("分类：无 typeid 的名字不渲染成按钮", code.indexOf("return !!typeMap[name].typeid;") > -1);
+t("分类：路径式分页归回第 1 页", code.indexOf("/^(\\/forum-\\d+-)\\d+(\\.html)$/") > -1);
+t("清理：无未使用的 baseUrl / allTypeLinks", code.indexOf("var baseUrl") === -1 && code.indexOf("allTypeLinks") === -1);
+t("清理：预览父节点变量不再重复声明", code.indexOf("myPreviewCell") > -1 && code.indexOf("var previewCell = document.createElement('td');\n                var firstRow") === -1);
+
 // 5) 版本一致性
 const v = (code.match(/^\/\/\s*@version\s+(\S+)/m) || [])[1];
 const sv = (code.match(/const scriptVer = "v([^"]+)";/) || [])[1];
