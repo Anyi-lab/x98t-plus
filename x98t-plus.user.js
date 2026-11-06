@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X大哥4.10版+收藏夹
 // @namespace    https://www.sehuatang.net
-// @version      4.14.1
+// @version      4.14.2
 // @description  98堂(原色花堂)官方脚本 高级搜索 作者追更 收藏追更/导出 图片分批懒加载 原图查看 橙金风UI
 // @author       98堂
 // @match        *://*.sehuatang.net/*
@@ -32,7 +32,7 @@
     "use strict";
 
     // #region 全局变量
-    const scriptVer = "v4.14.1";
+    const scriptVer = "v4.14.2";
     let activeTooltips = 0;
     let toastQueue = [];
     let isToastShowing = false;
@@ -10324,9 +10324,32 @@
         // 13 个真分类挡掉，因为主题行里的 th em 先占了这个名字（没有 typeid）。
         var seenTypeKeys = {};
 
+        var seenTypeIds = {};
+
+        // Discuz 原生分类链接是 <a>名称<span class="xg1 num">165553</span></a>，
+        // 直接读 textContent 会把帖子数拼进名字。这里先克隆、拆掉计数节点再取名。
+        function typeNameFromAnchor(a) {
+            if (!a) return '';
+            var box = a.cloneNode(true);
+            box.querySelectorAll('.xg1, .num, .xi1, em, span').forEach(function (n) {
+                if (!n.querySelector('font')) n.remove();
+            });
+            return (box.textContent || '').replace(/\s+/g, ' ').trim();
+        }
+
         function addType(name, typeid) {
             name = String(name || '').replace(/\s+/g, ' ').trim();
             if (!name) return false;
+            // 纯数字不是分类名，是「帖子数」被单独抠出来的残渣（如截图里那个 "2"）
+            if (/^\d+$/.test(name)) return false;
+            // 同一个 typeid 只允许一个名字。原生分类栏的 <a> 里带着
+            // <span class="xg1 num">165553</span>，textContent 会拼成
+            // 「色情分享165553」；另一条扫描路径又抓到干净的「色情分享」，
+            // 同一个 typeid 存成两个名字 —— 界面就重复了。
+            if (typeid) {
+                if (seenTypeIds[typeid]) return false;
+                seenTypeIds[typeid] = true;
+            }
             var key = name + '|' + (typeid || '');
             if (seenTypeKeys[key]) return false;
             if (!typeid && typeMap[name] && typeMap[name].typeid) return false;
@@ -10343,15 +10366,17 @@
         document.querySelectorAll('#thread_types a[href*="typeid="], ul.ttp a[href*="typeid="]').forEach(function (a) {
             var typeid = (a.href.match(/[?&]typeid=(\d+)/) || [])[1];
             if (!typeid || typeid === '0') return;
-            // 名称去掉尾部的帖子数字
-            var name = (a.textContent || '').replace(/\d+/g, '').replace(/\s+/g, ' ').trim();
+            var name = typeNameFromAnchor(a);
             if (!name || name.length > 20) return;
             addType(name, typeid);
         });
 
         var allHrefTypeLinks = document.querySelectorAll('a[href*="typeid="]');
         allHrefTypeLinks.forEach(function (a) {
-            var name = a.textContent.trim();
+            // 原生分类栏里的链接已经在上面按 typeid 入过库，这里再抓一次
+            // 只会因为 textContent 带帖子数而多出一个「名字+数字」的重复项。
+            if (a.closest('#thread_types, ul.ttp')) return;
+            var name = typeNameFromAnchor(a);
             if (!name) return;
             if (name === '全部' || name === '更多' || name === '|' || name.length > 12) return;
             var tidMatch = a.href.match(/[?&]typeid=(\d+)/);
@@ -10368,7 +10393,7 @@
 
         var emLinks = document.querySelectorAll('th em a[href*="typeid="]');
         emLinks.forEach(function (a) {
-            var name = a.textContent.replace(/^\[|\]$/g, '').trim();
+            var name = typeNameFromAnchor(a).replace(/^\[|\]$/g, '').trim();
             if (!name) return;
             var tidMatch = a.href.match(/[?&]typeid=(\d+)/);
             var typeid = tidMatch ? tidMatch[1] : null;

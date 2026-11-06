@@ -5,8 +5,9 @@
   "scripts": {
     "verify": "node scripts/verify.js",
     "test:preview": "node scripts/test-preview-dom.mjs",
-    "test": "node scripts/verify.js && node scripts/test-preview-dom.mjs",
-    "meta": "node scripts/gen-meta.js"
+    "test": "node scripts/verify.js && node scripts/test-preview-dom.mjs && node scripts/test-typefilter.mjs",
+    "meta": "node scripts/gen-meta.js",
+    "test:typefilter": "node scripts/test-typefilter.mjs"
   },
   "devDependencies": {
     "jsdom": "^31.0.0"

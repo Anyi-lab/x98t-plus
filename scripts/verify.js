@@ -69,6 +69,11 @@ t("路由：mod=guide 不带 view 也算导读页", /function isGuideListPage/.t
 t("路由：delegatePageHandlers 已改用 isGuideListPage", /const isMySpacePage = \(\) => isGuideListPage/.test(code));
 t("预览：tr 挂进 tbody 内部", /hostRow\.appendChild\(previewTR\)/.test(code));
 
+t("分类：typeid 唯一性守卫", /var seenTypeIds = \{\}/.test(code));
+t("分类：剥离计数节点的取名助手", /function typeNameFromAnchor/.test(code));
+t("分类：丢弃纯数字名", /if \(\/\^\\d\+\$\/\.test\(name\)\) return false;/.test(code));
+t("分类：原生栏链接不重复入库", /a\.closest\('#thread_types, ul\.ttp'\)/.test(code));
+
 // 5) 版本一致性
 const v = (code.match(/^\/\/\s*@version\s+(\S+)/m) || [])[1];
 const sv = (code.match(/const scriptVer = "v([^"]+)";/) || [])[1];
