@@ -58,6 +58,12 @@ t("预览：只认标题链接 a.xst", /!a\.classList\.contains\("xst"\)/.test(c
 t("预览：父级优先 tbody#normalthread_", /tbody\[id\^="normalthread_"\], tbody\[id\^="stickthread_"\]'\)/.test(code));
 t("预览：找不到链接时给提示", /__bgshPreviewWarned/.test(code));
 
+t("预览：安全确认页感知 fetch", /async function fetchThreadPageHTML/.test(code) && /var safeid='\(\[\^'\]\+\)'/.test(code));
+t("预览：空结果不写缓存", /if \(result\.length\) \{\s*\n\s*gmc\[tid\]/.test(code));
+t("预览：tbody 不再承载 div", /hostRow\.insertAdjacentElement\('afterend', previewTR\)/.test(code));
+t("预览：xst 让位逻辑未写反", /if \(row && row\.querySelector\("a\.xst"\)\) return;/.test(code));
+t("预览：重建菜单", /重建图片预览/.test(code));
+
 // 5) 版本一致性
 const v = (code.match(/^\/\/\s*@version\s+(\S+)/m) || [])[1];
 const sv = (code.match(/const scriptVer = "v([^"]+)";/) || [])[1];

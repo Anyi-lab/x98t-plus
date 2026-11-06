@@ -1,0 +1,196 @@
+diff --git a/x98t-plus.user.js b/x98t-plus.user.js
+index e687940..e2e5cb5 100644
+--- a/x98t-plus.user.js
++++ b/x98t-plus.user.js
+@@ -1,7 +1,7 @@
+ // ==UserScript==
+ // @name         X大哥4.10版+收藏夹
+ // @namespace    https://www.sehuatang.net
+-// @version      4.13.2
++// @version      4.14.0
+ // @description  98堂(原色花堂)官方脚本 高级搜索 作者追更 收藏追更/导出 图片分批懒加载 原图查看 橙金风UI
+ // @author       98堂
+ // @match        *://*.sehuatang.net/*
+@@ -32,7 +32,7 @@
+     "use strict";
+ 
+     // #region 全局变量
+-    const scriptVer = "v4.13.2";
++    const scriptVer = "v4.14.0";
+     let activeTooltips = 0;
+     let toastQueue = [];
+     let isToastShowing = false;
+@@ -7770,6 +7770,33 @@
+         });
+     }
+ 
++    // 站点的「18 岁确认」不是 Cloudflare，而是站点自己的确认页：
++    //   页面里下发 var safeid='...'，再由 static/safe/js/mainv2.js 写成 _safe cookie 后重载。
++    // 预览功能靠 fetch 拉帖子页取图，拿到的是这个确认页（没有 .t_f），
++    // 于是永远提取不到图片 —— 导读/版块/收藏的预览图就整片消失。
++    // 这里照它自己的做法过闸：取出 safeid → 写 _safe → 重取一次。
++    async function fetchThreadPageHTML(href) {
++        var opts = { signal: AbortSignal.timeout(9000), credentials: "same-origin" };
++        var html = await (await fetch(href, opts)).text();
++        var m = html.match(/var safeid='([^']+)'/);
++        if (m) {
++            try {
++                document.cookie = "_safe=" + m[1] + "; path=/; max-age=86400; SameSite=Lax";
++            } catch (e) {}
++            html = await (await fetch(href, opts)).text();
++        }
++        return html;
++    }
++
++    // 清掉「读了但没图」的空行，避免预览行越积越多
++    function dropEmptyPreviewRow(host) {
++        if (!host || host.querySelector(".bgsh-pt")) return;
++        var row = host.closest(".bgsh-preview-row");
++        var cell = row ? row.querySelector("td") : null;
++        if (row && cell && cell.children.length <= 1) row.remove();
++        else if (!row) host.remove();
++    }
++
+     async function displayThreadImages(settings) {
+         if (!settings.displayThreadImages) return;
+         cleanupDuplicateThreadPreviews();
+@@ -7841,8 +7868,7 @@
+         for (let i = 0; i < toFetch.length; i += 8) {
+             await Promise.all(toFetch.slice(i, i + 8).map(async ({ tid, href, titleCell }) => {
+                 try {
+-                    const r = await fetch(href, { signal: AbortSignal.timeout(5000) });
+-                    const html = await r.text();
++                    const html = await fetchThreadPageHTML(href);
+                     if (/过于?频繁|间隔.*秒|请稍后/i.test(html)) {
+                         delete cache[tid];
+                         return;
+@@ -7949,8 +7975,38 @@
+                     return host;
+                 }
+             }
+-            return el.closest('tbody[id^="normalthread_"], tbody[id^="stickthread_"]') ||
+-                el.closest('.pbw') ||
++            // 表格行布局（导读 / 版块 / 收藏）：用一条新的 <tr><td colspan> 承载预览。
++            // 不能把 div 直接 append 进 <tbody>（tbody 只允许 tr，表格布局会把 div 吃掉，
++            // 表现就是「预览图不显示」）；也不放在 th 里（标题格宽随列宽变，容易被裁）。
++            var hostRow = el.closest('tbody[id^="normalthread_"], tbody[id^="stickthread_"]');
++            if (hostRow && hostRow.parentNode) {
++                var rowHost = hostRow.parentNode.querySelector(
++                    '[data-bgsh-preview-host-tid="' + tid + '"]'
++                );
++                if (rowHost) return rowHost;
++
++                var previewTR = document.createElement('tr');
++                previewTR.className = 'bgsh-preview-row';
++                previewTR.dataset.bgshPreviewRowTid = tid;
++                var previewCell = document.createElement('td');
++                var firstRow = hostRow.querySelector('tr');
++                var totalColumns = firstRow
++                    ? Array.from(firstRow.children).reduce(function(total, cell) {
++                          return total + (parseInt(cell.getAttribute('colspan'), 10) || 1);
++                      }, 0)
++                    : 1;
++                previewCell.colSpan = Math.max(1, totalColumns);
++                previewCell.style.cssText = 'padding:4px 0 8px 0;border:0;background:transparent;';
++                var host = document.createElement('div');
++                host.className = 'bgsh-preview-host';
++                host.dataset.bgshPreviewHostTid = tid;
++                previewCell.appendChild(host);
++                previewTR.appendChild(previewCell);
++                hostRow.insertAdjacentElement('afterend', previewTR);
++                return host;
++            }
++
++            return el.closest('.pbw') ||
+                 el.closest('li') ||
+                 el.closest('th') ||
+                 el.closest('td') ||
+@@ -7980,12 +8036,12 @@
+                 if (!tid || links.has(tid)) return;
+                 const text = (a.textContent || '').trim();
+                 if (!text || text.length < 3) return;
+-                // 只认标题链接本身。否则「最后发表」列里那个作者名 a[href*=tid] 会先占住 tid，
+-                // 预览图就被挂到那一格里（或整行找不到可靠父级而直接丢图）。
++                // 只认标题链接本身，避免「最后发表」那一列的时间链接先占住 tid。
+                 // Discuz 标题链接固定带 class=xst（原版 a.xst / a.s.xst）。
++                // 规则：不是 xst 的链接，只要它所在行里已经有 a.xst，就让位。
+                 if (!a.classList.contains("xst")) {
+                     const row = a.closest("tbody[id^='normalthread_'], tbody[id^='stickthread_'], tr, li");
+-                    if (row && !row.querySelector("a.xst")) return;
++                    if (row && row.querySelector("a.xst")) return;
+                 }
+                 links.set(tid, { href: a.href, el: a });
+             });
+@@ -8030,12 +8086,14 @@
+                     applyThreadPreviewLayout(box);
+                     parent.appendChild(box);
+                     cache[tid] = 'rendered';
+-                } else if (!gmc[tid] || (gmc[tid].limit || 3) < wantedPreviewCount) {
++                } else if (!gmc[tid] || !(gmc[tid].imgs && gmc[tid].imgs.length) ||
++                           (gmc[tid].limit || 3) < wantedPreviewCount) {
+                     cache[tid] = 'loading';
+                     toFetch.push({ tid, href, parent });
+                 } else {
+                     cache[tid] = 'rendered';
+                     removeEmptyMyPostsPreview(parent);
++                    dropEmptyPreviewRow(parent);
+                 }
+             });
+ 
+@@ -8044,8 +8102,7 @@
+             for (let i = 0; i < toFetch.length; i += 6) {
+                 await Promise.all(toFetch.slice(i, i + 6).map(async ({ tid, href, parent }) => {
+                     try {
+-                        const r = await fetch(href, { signal: AbortSignal.timeout(5000) });
+-                        const html = await r.text();
++                        const html = await fetchThreadPageHTML(href);
+                         if (/过于?频繁|间隔.*秒|请稍后/i.test(html)) {
+                             delete cache[tid];
+                             removeEmptyMyPostsPreview(parent);
+@@ -8067,8 +8124,13 @@
+                             }
+                         });
+                         const result = imgs.slice(0, wantedPreviewCount);
+-                        gmc[tid] = { imgs: result, ts: Date.now(), limit: wantedPreviewCount };
+-                        GM_setValue('bgsh_preview_cache', JSON.stringify(gmc));
++                        // 只有真的取到图才落缓存。写空数组会让这个 tid 被判定为
++                        // 「已渲染且 limit 够」，之后永远走 else 分支不再重试 ——
++                        // 一次失败（安全确认页 / 限流）就会把预览永久钉死。
++                        if (result.length) {
++                            gmc[tid] = { imgs: result, ts: Date.now(), limit: wantedPreviewCount };
++                            GM_setValue('bgsh_preview_cache', JSON.stringify(gmc));
++                        }
+                         if (result.length && !parent.querySelector('.bgsh-pt')) {
+                             var box = document.createElement('div');
+                             box.className = 'bgsh-pt';
+@@ -8079,6 +8141,7 @@
+                             parent.appendChild(box);
+                         } else if (!result.length) {
+                             removeEmptyMyPostsPreview(parent);
++                            dropEmptyPreviewRow(parent);
+                         }
+                         cache[tid] = 'rendered';
+                     } catch(e) {
+@@ -12536,6 +12599,22 @@ async function main() {
+         showToast(`🌓 主题已切换: ${next === 'auto' ? '跟随系统' : next}`, 'success');
+     });
+ 
++    GM_registerMenuCommand("🖼 重建图片预览", async () => {
++        // 预览依赖 fetch 抓帖子页取图。站点加了 18 岁确认页后，
++        // fetch 曾经一直拿到确认页（没有 .t_f），预览就永久空着。
++        // 这里清掉窗口内状态和缓存，重新扫一遍，方便验证修复是否生效。
++        window.__98t_preview_state = {};
++        try { GM_setValue("bgsh_preview_cache", "{}"); } catch (e) {}
++        document.querySelectorAll(".bgsh-pt").forEach(function(box) {
++            var row = box.closest(".bgsh-preview-row");
++            if (row) row.remove(); else box.remove();
++        });
++        await displayAdvanThreadImages(getSettings());
++        var count = document.querySelectorAll(".bgsh-pt").length;
++        showToast(count ? "预览已重建：" + count + " 处" : "没有可预览的主题（或仍未取到图）",
++                  count ? "success" : "warning", 2600);
++    });
++
+     GM_registerMenuCommand("🔍 快速搜索", () => {
+         showSearchDialog();
+     });
