@@ -1,0 +1,14 @@
+{
+  "name": "x98t-plus",
+  "private": true,
+  "description": "98堂(原色花堂) 油猴脚本 —— 仅本地开发用，脚本本体是 x98t-plus.user.js",
+  "scripts": {
+    "verify": "node scripts/verify.js",
+    "test:preview": "node scripts/test-preview-dom.mjs",
+    "test": "node scripts/verify.js && node scripts/test-preview-dom.mjs",
+    "meta": "node scripts/gen-meta.js"
+  },
+  "devDependencies": {
+    "jsdom": "^31.0.0"
+  }
+}

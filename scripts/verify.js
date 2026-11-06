@@ -60,9 +60,14 @@ t("预览：找不到链接时给提示", /__bgshPreviewWarned/.test(code));
 
 t("预览：安全确认页感知 fetch", /async function fetchThreadPageHTML/.test(code) && /var safeid='\(\[\^'\]\+\)'/.test(code));
 t("预览：空结果不写缓存", /if \(result\.length\) \{\s*\n\s*gmc\[tid\]/.test(code));
-t("预览：tbody 不再承载 div", /hostRow\.insertAdjacentElement\('afterend', previewTR\)/.test(code));
+t("预览：tbody 不再承载 div", /hostRow\.appendChild\(previewTR\)/.test(code));
+t("预览：清理空预览行", /function dropEmptyPreviewRow/.test(code));
 t("预览：xst 让位逻辑未写反", /if \(row && row\.querySelector\("a\.xst"\)\) return;/.test(code));
 t("预览：重建菜单", /重建图片预览/.test(code));
+
+t("路由：mod=guide 不带 view 也算导读页", /function isGuideListPage/.test(code));
+t("路由：delegatePageHandlers 已改用 isGuideListPage", /const isMySpacePage = \(\) => isGuideListPage/.test(code));
+t("预览：tr 挂进 tbody 内部", /hostRow\.appendChild\(previewTR\)/.test(code));
 
 // 5) 版本一致性
 const v = (code.match(/^\/\/\s*@version\s+(\S+)/m) || [])[1];

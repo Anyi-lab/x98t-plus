@@ -7,3 +7,7 @@
 
 # 本地原件备份（不推远端）
 .backup/
+node_modules/
+
+# 预览测试用的真实页面样本（抓自站点，不入库）
+scripts/fixtures/
