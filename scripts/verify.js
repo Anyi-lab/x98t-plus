@@ -74,6 +74,13 @@ t("分类：剥离计数节点的取名助手", /function typeNameFromAnchor/.te
 t("分类：丢弃纯数字名", /if \(\/\^\\d\+\$\/\.test\(name\)\) return false;/.test(code));
 t("分类：原生栏链接不重复入库", /a\.closest\('#thread_types, ul\.ttp'\)/.test(code));
 
+t("分类：移除「原生栏够用就不渲染」的守卫", !/var nativeItems = nativeTypeNav\.querySelectorAll/.test(code) && !/__bgshForceTypeFilter/.test(code));
+
+t("域名：不再对 *://*/* 生效", !/^\/\/ @match\s+\*:\/\/\*\/\*\s*$/m.test(code));
+t("域名：至少两条站点 @match", (code.match(/^\/\/ @match\s+\*:\/\/\*\./gm) || []).length >= 2);
+t("域名：有 @include 家族正则", /^\/\/ @include\s+\/\^https/m.test(code));
+t("域名：运行时 isSiteHost 兜底", /function isSiteHost/.test(code) && /if \(!isSiteHost\(\)\) return;/.test(code));
+
 // 5) 版本一致性
 const v = (code.match(/^\/\/\s*@version\s+(\S+)/m) || [])[1];
 const sv = (code.match(/const scriptVer = "v([^"]+)";/) || [])[1];

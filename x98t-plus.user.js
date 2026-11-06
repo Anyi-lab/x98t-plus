@@ -1,12 +1,16 @@
 // ==UserScript==
 // @name         X大哥4.10版+收藏夹
 // @namespace    https://www.sehuatang.net
-// @version      4.14.2
+// @version      4.14.3
 // @description  98堂(原色花堂)官方脚本 高级搜索 作者追更 收藏追更/导出 图片分批懒加载 原图查看 橙金风UI
 // @author       98堂
 // @match        *://*.sehuatang.net/*
 // @match        *://*.sehuatang.org/*
-// @match        *://*/*
+// @match        *://*.sehuatang.me/*
+// @match        *://*.sehuatang.com/*
+// @match        *://*.98tang.net/*
+// @match        *://*.98tang.org/*
+// @include      /^https?:\/\/([^\/]+\.)?(sehuatang|98tang)\.[a-z]{2,}(\/|$)/
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
@@ -32,7 +36,7 @@
     "use strict";
 
     // #region 全局变量
-    const scriptVer = "v4.14.2";
+    const scriptVer = "v4.14.3";
     let activeTooltips = 0;
     let toastQueue = [];
     let isToastShowing = false;
@@ -10489,13 +10493,13 @@
             pillHtml += '<a class="bgsh-type-pill' + (isActive ? ' active' : '') + '" href="' + href.replace(/"/g, '&quot;') + '">' + name + '</a>';
         });
 
-        // 原生分类栏已经能胜任时，默认不重复渲染（站点自己的 #thread_types 更贴合版块），
-        // 想要双重保险可在设置里强制显示。折叠状态记忆仍然生效。
-        var nativeTypeNav = document.querySelector('#thread_types, ul.ttp');
-        if (nativeTypeNav && !window.__bgshForceTypeFilter) {
-            var nativeItems = nativeTypeNav.querySelectorAll('a[href*="typeid="]').length;
-            if (nativeItems >= Object.keys(typeMap).length) return;
-        }
+        // 这里原本有一条「原生分类栏够用就不重复渲染」的提前返回：
+        //     if (nativeItems >= Object.keys(typeMap).length) return;
+        // 4.14.2 修好 typeMap 的重复之后，条数从 20 掉到 10，正好等于原生栏的 10，
+        // 条件成立 → 整条筛选栏直接不渲染。等于「bug 修好了，功能却消失了」。
+        // 这条守卫本意是避免两栏重复，但插件栏有折叠记忆、有「全部」入口、
+        // 宽度也已对齐站点，是实际在用的那一条，所以移除守卫，一律渲染。
+        // 界面重复由按 typeid 去重解决，不靠「不渲染」来回避。
 
         filterBar.innerHTML =
             '<div class="bgsh-type-filter-header">' +
@@ -12598,7 +12602,18 @@
     }
 
 
+// 站点域名白名单：sehuatang / 98堂 家族的任何子域与 TLD。
+// 文件头的 @match 已经收窄了，这里再兜一层 —— 老版本装的时候 @match 是
+// *://*/*，光改文件头不会让已装的实例立刻失效，运行时这道守卫才是真正生效的那道。
+const SITE_HOST_RE = /(^|\.)(sehuatang|98tang)\.[a-z]{2,}$/i;
+function isSiteHost() {
+    var host = String(window.location.hostname || "").toLowerCase();
+    if (!host) return false;
+    return SITE_HOST_RE.test(host);
+}
+
 async function main() {
+        if (!isSiteHost()) return;   // 非本站域名：整份脚本不生效
         var hasFavPage = isFavoritePageURL(window.location.href);
         if (document.title.indexOf("色花堂") == -1 && document.title.indexOf("98堂") == -1 && !hasFavPage) {
             // 站点上 Cloudflare 后，挑战页/跳转页的 title 会变成「不详」「请稍候…」，
@@ -12618,7 +12633,7 @@ async function main() {
 
         // 板块列表默认排序：可能触发一次重定向，命中时直接结束本次执行，
         // 避免在即将卸载的页面上做无意义的渲染。放在标题判断之后，
-        // 保证不会影响非本站页面（@match 是 *://*/*）。
+        // 保证不会影响非本站页面（@match 已收窄到站点域名，另有 isSiteHost 兜底）。
         if (applyForumDefaultSort()) return;
 
         // 4.5.1 已移除自动签到与签到提醒，清理旧版遗留设置。
