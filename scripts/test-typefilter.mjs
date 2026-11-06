@@ -1,34 +1,45 @@
 import fs from 'fs';
 import { JSDOM } from 'jsdom';
+import { extractFns } from './extract-fns.mjs';
 
 const CASES = [
-  { file: 'scripts/fixtures/forumdisplay.html',     enc: 'gbk',   fid: '166', label: '真实版块页(fid=166)' },
-  { file: 'scripts/fixtures/forumdisplay-dup.html', enc: 'utf8',  fid: '88',  label: '包含计数 span 的版块页(截图场景)' },
+  { file: 'scripts/fixtures/forumdisplay.html',     enc: 'gbk',  fid: '166', label: '真实版块页(fid=166)' },
+  { file: 'scripts/fixtures/forumdisplay-dup.html', enc: 'utf8', fid: '88',  label: '含计数 span 的版块页(截图场景)' },
 ];
 
 const src = fs.readFileSync('x98t-plus.user.js', 'utf8');
-const start = src.indexOf('        var typeMap = {};');
-const end = src.indexOf('        var typeNames = Object.keys(typeMap);');
-if (start < 0 || end < 0) { console.log('FAIL 源码里找不到分类收集段'); process.exit(1); }
-const body = src.slice(start, end);
-
-// 整个 initTopicTypeFilter 函数体，用来验证「筛选栏到底有没有渲染出来」。
-// 4.14.2 修好去重后，旧守卫 if (nativeItems >= typeMap.size) return; 变成永真，
-// 整条栏直接不渲染 —— 单测分类名是抓不到的，必须验实测 DOM。
-const fnStart = src.indexOf('    function initTopicTypeFilter');
-const fnBody = (() => {
-  let d = 0, j = fnStart;
-  while (j < src.length) {
-    if (src[j] === '{') d++;
-    else if (src[j] === '}') { d--; if (d === 0) break; }
-    j++;
-  }
-  return src.slice(fnStart, j + 1);
+const body = (() => {
+  const start = src.indexOf('        var typeMap = {};');
+  const end = src.indexOf('        var typeNames = Object.keys(typeMap);');
+  if (start < 0 || end < 0) { console.log('FAIL 源码里找不到分类收集段'); process.exit(1); }
+  return src.slice(start, end);
 })();
+
+// stripTypeParams / buildTypeHref / initTopicTypeFilter 三个函数一起抽出来跑
+const fnBody = extractFns(src, ['stripTypeParams', 'buildTypeHref', 'initTopicTypeFilter']);
 
 let fails = 0;
 const check = (ok, msg) => { console.log((ok ? 'PASS ' : 'FAIL ') + msg); if (!ok) fails++; };
 
+function runFilter(html, fid, url) {
+  const dom = new JSDOM(html, { url });
+  const store = {};
+  const stubs = {
+    GM_getValue: (k, d) => (k in store ? store[k] : d),
+    GM_setValue: (k, v) => { store[k] = v; },
+    getTypeFilterCollapsed: () => false,
+    setTypeFilterCollapsed: () => {},
+    showToast: () => {},
+  };
+  const fn = new Function(...Object.keys(stubs), 'window', 'document',
+    fnBody + '\nreturn initTopicTypeFilter;')(...Object.values(stubs), dom.window, dom.window.document);
+  try { fn(); } catch (e) { console.log('  调用异常: ' + e.message); }
+  const bar = dom.window.document.getElementById('bgsh-type-filter');
+  const pills = bar ? [...bar.querySelectorAll('.bgsh-type-pill')] : [];
+  return { bar, pills, names: [...new Set(pills.map(p => p.textContent))].filter(t => t !== '🌐 全部') };
+}
+
+// ============ 1. 分类名收集 ============
 for (const c of CASES) {
   if (!fs.existsSync(c.file)) { console.log('SKIP: 缺少 ' + c.file); continue; }
   const raw = fs.readFileSync(c.file);
@@ -51,23 +62,46 @@ for (const c of CASES) {
   const prefixDup = names.filter(a => names.some(b => b !== a && b.startsWith(a)));
   check(prefixDup.length === 0, `没有前缀重复项（${prefixDup.length ? prefixDup.join(',') : '无'}）`);
 
-  // —— 渲染验证：原生分类栏存在时，插件筛选栏仍然必须渲染 ——
-  const store = {};
-  const stubs = {
-    GM_getValue: (k, d) => (k in store ? store[k] : d),
-    GM_setValue: (k, v) => { store[k] = v; },
-    getTypeFilterCollapsed: () => false,
-    setTypeFilterCollapsed: () => {},
-    showToast: () => {},
-  };
-  const dom2 = new JSDOM(html, { url: 'https://www.sehuatang.org/forum.php?mod=forumdisplay&fid=' + c.fid });
-  const runFn = new Function(...Object.keys(stubs), 'window', 'document',
-    fnBody + '\nreturn initTopicTypeFilter;')(...Object.values(stubs), dom2.window, dom2.window.document);
-  try { runFn(); } catch (e) { console.log('  调用异常: ' + e.message); }
-  const bar = dom2.window.document.getElementById('bgsh-type-filter');
-  const pills = bar ? bar.querySelectorAll('.bgsh-type-pill') : [];
+  // ============ 2. 筛选栏必须渲染 ============
+  const { bar, pills } = runFilter(html, c.fid, 'https://www.sehuatang.org/forum.php?mod=forumdisplay&fid=' + c.fid);
   check(!!bar, '筛选栏已渲染（原生分类栏存在时也要渲染）');
   check(pills.length >= names.length, `筛选栏按钮 ${pills.length} 个，覆盖 ${names.length} 个分类`);
+}
+
+// ============ 3. 分类链接构造 ============
+// 旧写法对整串 URL 做正则删除，两种地址会拼出坏链接：
+//   filter=typeid  ->  fid=95typeid   → Discuz 报「指定的版块不存在」（用户截图）
+//   typeid=（空）   ->  残留 &typeid=  → 再拼一次就成了两个 typeid
+const HREF_FIXTURE = 'scripts/fixtures/forumdisplay-95.html';
+if (!fs.existsSync(HREF_FIXTURE)) {
+  console.log('\nSKIP: 缺少 ' + HREF_FIXTURE + '，跳过链接构造测试');
+} else {
+  const hHtml = new TextDecoder('gbk').decode(fs.readFileSync(HREF_FIXTURE));
+  const HREF_PAGES = [
+    'https://www.sehuatang.org/forum.php?mod=forumdisplay&fid=95',
+    'https://www.sehuatang.org/forum.php?mod=forumdisplay&fid=95&orderby=dateline&ascdesc=desc',
+    'https://www.sehuatang.org/forum.php?mod=forumdisplay&fid=95&typeid=&orderby=dateline&ascdesc=desc&filter=typeid&typeid=710',
+    'https://www.sehuatang.org/forum.php?mod=forumdisplay&fid=95&filter=typeid&typeid=710&orderby=dateline&ascdesc=desc',
+  ];
+  for (const pageUrl of HREF_PAGES) {
+    const { pills } = runFilter(hHtml, '95', pageUrl);
+    const tag = pageUrl.replace('https://www.sehuatang.org/forum.php?mod=forumdisplay&fid=95', 'fid=95') || 'fid=95';
+    const broken = [], lostSort = [], wrongFid = [];
+    for (const pill of pills) {
+      const abs = new URL(pill.getAttribute('href') || '', pageUrl);
+      const qp = Object.fromEntries(abs.searchParams);
+      if (!/^\d+$/.test(qp.fid || '')) wrongFid.push(`${pill.textContent}->fid=${qp.fid}`);
+      if ((abs.search.match(/typeid=/g) || []).length > 1) broken.push(`${pill.textContent}->两个 typeid`);
+      if (/[?&]typeid=(&|$)/.test(abs.search)) broken.push(`${pill.textContent}->空 typeid`);
+      if (pageUrl.includes('orderby=dateline') && pill.textContent !== '🌐 全部' && qp.orderby !== 'dateline') {
+        lostSort.push(pill.textContent);
+      }
+    }
+    console.log(`\n[${tag}] ${pills.length} 个按钮`);
+    check(wrongFid.length === 0, `fid 参数合法${wrongFid.length ? '：' + wrongFid.slice(0, 2).join(' | ') : ''}`);
+    check(broken.length === 0, `typeid 参数唯一且非空${broken.length ? '：' + broken.slice(0, 2).join(' | ') : ''}`);
+    check(lostSort.length === 0, `保留当前排序${lostSort.length ? '：' + lostSort.slice(0, 3).join(',') : ''}`);
+  }
 }
 
 console.log(fails ? `\nRESULT: ${fails} failed` : '\nRESULT: all passed');

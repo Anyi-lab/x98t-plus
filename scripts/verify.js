@@ -81,6 +81,10 @@ t("域名：至少两条站点 @match", (code.match(/^\/\/ @match\s+\*:\/\/\*\./
 t("域名：有 @include 家族正则", /^\/\/ @include\s+\/\^https/m.test(code));
 t("域名：运行时 isSiteHost 兜底", /function isSiteHost/.test(code) && /if \(!isSiteHost\(\)\) return;/.test(code));
 
+t("分类：URL 参数级重建（不再正则删整串）", /function stripTypeParams/.test(code) && /function buildTypeHref/.test(code));
+t("分类：不再用 =\\d* 的老删参正则", !/\(typeid\|filter\|page\)=\\d\*/.test(code.replace(/\/\/.*$/gm, "")));
+t("翻页：空值参数不复制到链接上", /if \(value !== null && value !== ""\) target\.searchParams\.set/.test(code));
+
 // 5) 版本一致性
 const v = (code.match(/^\/\/\s*@version\s+(\S+)/m) || [])[1];
 const sv = (code.match(/const scriptVer = "v([^"]+)";/) || [])[1];

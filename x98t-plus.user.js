@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X大哥4.10版+收藏夹
 // @namespace    https://www.sehuatang.net
-// @version      4.14.3
+// @version      4.15.0
 // @description  98堂(原色花堂)官方脚本 高级搜索 作者追更 收藏追更/导出 图片分批懒加载 原图查看 橙金风UI
 // @author       98堂
 // @match        *://*.sehuatang.net/*
@@ -36,7 +36,7 @@
     "use strict";
 
     // #region 全局变量
-    const scriptVer = "v4.14.3";
+    const scriptVer = "v4.15.0";
     let activeTooltips = 0;
     let toastQueue = [];
     let isToastShowing = false;
@@ -8350,7 +8350,10 @@
                 var target = new URL(link.getAttribute("href"), location.href);
                 inheritedParams.forEach(function(name) {
                     var value = current.searchParams.get(name);
-                    if (value !== null) target.searchParams.set(name, value);
+                    // 空值要跳过。typeid= 这种空参数如果被原样复制到翻页链接上，
+                    // 会拼出 &typeid=&typeid=710 这种双参数地址，Discuz 解析出来的
+                    // 版块/分类看运气，严重时直接回「指定的版块不存在」。
+                    if (value !== null && value !== "") target.searchParams.set(name, value);
                 });
                 link.href = target.href;
             } catch (error) {}
@@ -10306,6 +10309,44 @@
     // #endregion
 
     // #region 主题分类筛选
+    // 用 URLSearchParams 拆参数再重拼，不再对整串地址做正则删除。
+    //
+    // 旧写法是 href.replace(/[?&](typeid|filter|page)=\d*/g, '')，它有两个死穴：
+    //   1) filter=typeid 里的 typeid 后面不是数字，正则匹配到 &filter= 就停了，
+    //      于是留下半截 'typeid' 粘在前面参数的值上 ——
+    //      fid=95&filter=typeid&typeid=710 变成 fid=95typeid&orderby=...
+    //      Discuz 于是报「指定的版块不存在」（截图就是这条）。
+    //   2) typeid= 是空值时 \d* 匹配空串，删掉参数名却留下 '&typeid=' 残渣，
+    //      再拼一次 filter=typeid&typeid=N 就成了两个 typeid，取到哪个看运气。
+    // 参数级操作从根上避开了这两类问题。
+    function stripTypeParams(href) {
+        var url;
+        try {
+            url = new URL(href, window.location.href);
+        } catch (error) {
+            return String(href || '').replace(/[?&](typeid|filter|page)=[^&]*/g, '');
+        }
+        ['typeid', 'filter', 'page'].forEach(function (name) {
+            url.searchParams.delete(name);
+        });
+        return url.href;
+    }
+
+    // 分类链接一律走这里构造：以 stripTypeParams 的结果为底，只 append 一次 filter/typeid。
+    function buildTypeHref(typeid) {
+        var base = stripTypeParams(window.location.href);
+        if (!typeid) return base;
+        var url;
+        try {
+            url = new URL(base);
+        } catch (error) {
+            return base + (base.indexOf('?') >= 0 ? '&' : '?') + 'filter=typeid&typeid=' + encodeURIComponent(typeid);
+        }
+        url.searchParams.set('filter', 'typeid');
+        url.searchParams.set('typeid', String(typeid));
+        return url.href;
+    }
+
     function initTopicTypeFilter() {
         var fid = null;
         var pathMatch = window.location.pathname.match(/forum-(\d+)-/);
@@ -10450,17 +10491,18 @@
             }
         });
 
-        var baseUrl = window.location.href.replace(/[?&](typeid|filter|page)=\d*/g, '').replace(/\?&/, '?').replace(/\?$/, '').replace(/&&/g, '&');
-        while (baseUrl.indexOf('&&') >= 0) baseUrl = baseUrl.replace('&&', '&');
-        if (baseUrl.charAt(baseUrl.length-1) === '?' || baseUrl.charAt(baseUrl.length-1) === '&')
-            baseUrl = baseUrl.substring(0, baseUrl.length-1);
+        var baseUrl = stripTypeParams(window.location.href);
 
+        // 有 typeid 的一律自己重建，不直接沿用页面上抓来的 a.href。
+        // 页面里那类链接常出自主题行的 <em><a href=...typeid=710></a></em>，
+        // 它只带 fid/filter/typeid，会把当前页的 orderby/ascdesc 丢掉；
+        // 点一下就跳回默认排序，看起来像「排序自己变了」。
         typeNames.forEach(function (name) {
-            if (!typeHrefMap[name]) {
-                var info = typeMap[name];
-                if (info.typeid) {
-                    typeHrefMap[name] = baseUrl + (baseUrl.indexOf('?') >= 0 ? '&' : '?') + 'filter=typeid&typeid=' + info.typeid;
-                }
+            var info = typeMap[name];
+            if (info.typeid) {
+                typeHrefMap[name] = buildTypeHref(info.typeid);
+            } else if (!typeHrefMap[name]) {
+                typeHrefMap[name] = stripTypeParams(window.location.href);
             }
         });
 
@@ -10473,10 +10515,7 @@
         filterBar.className = 'bgsh-type-filter';
         filterBar.id = 'bgsh-type-filter';
 
-        var allUrl = window.location.href.replace(/[?&](typeid|filter)=\d*[^&]*/g, '').replace(/\?&/, '?').replace(/\?$/, '');
-        while (allUrl.indexOf('&&') >= 0) allUrl = allUrl.replace('&&', '&');
-        if (allUrl.charAt(allUrl.length-1) === '?' || allUrl.charAt(allUrl.length-1) === '&')
-            allUrl = allUrl.substring(0, allUrl.length-1);
+        var allUrl = stripTypeParams(window.location.href);
 
         var isFiltered = !!currentTypeid;
 
