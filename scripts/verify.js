@@ -112,6 +112,14 @@ t("分类：路径式分页归回第 1 页", code.indexOf("/^(\\/forum-\\d+-)\\d
 t("清理：无未使用的 baseUrl / allTypeLinks", code.indexOf("var baseUrl") === -1 && code.indexOf("allTypeLinks") === -1);
 t("清理：预览父节点变量不再重复声明", code.indexOf("myPreviewCell") > -1 && code.indexOf("var previewCell = document.createElement('td');\n                var firstRow") === -1);
 
+// 4.15.2 收藏目录（分类）不再凭空消失
+t("收藏：uid 只认自己（无 space-uid-* 兜底进强来源）", !/const userLink = [^;]*a\[href\*='space-uid-'\][^;]*;/.test(code));
+t("收藏：弱来源 uid 不写回缓存", /if \(cachedUid\) return String\(cachedUid\);/.test(code) && !/if \(urlUid\) \{ GM_setValue\("bgsh_uid", urlUid\); return urlUid; \}/.test(code));
+t("收藏：条目里用到的目录会补回列表（不降级）", /else if \(!folders\.includes\(data\.folder\)\) \{ folders\.push\(data\.folder\); folderRestored = true; \}/.test(code));
+t("收藏：loadFavoriteData 以条目补齐目录", /Object\.keys\(favCache\)\.forEach\(function \(k2\) \{[\s\S]{0,160}?folders\.push\(f\);/.test(code));
+t("收藏：目录列表空了从备份自愈", /bgsh_favs_backup_/.test(code) && /已从备份还原/.test(code));
+t("收藏：自动分类不删用户建的目录", /function cleanEmptyFolders\(keepFolders\)/.test(code) && /keep\.has\(f\) \|\| usedFolders\.has\(f\)/.test(code));
+
 // 5) 版本一致性
 const v = (code.match(/^\/\/\s*@version\s+(\S+)/m) || [])[1];
 const sv = (code.match(/const scriptVer = "v([^"]+)";/) || [])[1];

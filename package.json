@@ -5,7 +5,7 @@
   "scripts": {
     "verify": "node scripts/verify.js",
     "test:preview": "node scripts/test-preview-dom.mjs",
-    "test": "node scripts/verify.js && node scripts/test-site-scope.mjs && node scripts/test-preview-dom.mjs && node scripts/test-typefilter.mjs",
+    "test": "verify.js && test-site-scope.mjs && test-preview-dom.mjs && test-typefilter.mjs && test-favorites.mjs",
     "meta": "node scripts/gen-meta.js",
     "test:typefilter": "node scripts/test-typefilter.mjs",
     "test:site": "node scripts/test-site-scope.mjs"

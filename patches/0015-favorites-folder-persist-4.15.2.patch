@@ -1,0 +1,165 @@
+diff --git a/x98t-plus.user.js b/x98t-plus.user.js
+index 1642049..2a55e31 100644
+--- a/x98t-plus.user.js
++++ b/x98t-plus.user.js
+@@ -1,7 +1,7 @@
+ // ==UserScript==
+ // @name         X大哥4.10版+收藏夹
+ // @namespace    https://www.sehuatang.net
+-// @version      4.15.1
++// @version      4.15.2
+ // @description  98堂(原色花堂)官方脚本 高级搜索 作者追更 收藏追更/导出 图片分批懒加载 原图查看 橙金风UI
+ // @author       98堂
+ // @match        *://*.sehuatang.net/*
+@@ -36,7 +36,7 @@
+     "use strict";
+ 
+     // #region 全局变量
+-    const scriptVer = "v4.15.1";
++    const scriptVer = "v4.15.2";
+     let activeTooltips = 0;
+     let toastQueue = [];
+     let isToastShowing = false;
+@@ -3566,7 +3566,11 @@
+             if (uid !== cachedUid) GM_setValue("bgsh_uid", uid);
+             return uid;
+         }
+-        const userLink = qs(".vwmy a") || qs(".userinfo a[href*='uid=']") || qs("#um a[href*='uid=']") || qs("a[href*='space-uid-']");
++        // 只认「只可能是自己」的两处：顶栏 .vwmy、右上用户面板 #um。
++        // 早先这里还接了一条 a[href*='space-uid-']：主题页/他人空间页上第一个
++        // 这种链接往往是「别人」，取到就会把存储命名空间切到那个 uid 上，
++        // 表现就是「收藏和建好的目录全都不见了」，还会把错误 uid 写进缓存。
++        const userLink = qs(".vwmy a") || qs(".userinfo a[href*='uid=']") || qs("#um a[href*='uid=']");
+         if (userLink) {
+             try {
+                 const url = new URL(userLink.href, location.href);
+@@ -3578,9 +3582,16 @@
+             if (!uid) { const m = userLink.href.match(/space-uid-(\d+)/); uid = m ? m[1] : null; }
+             if (uid) { GM_setValue("bgsh_uid", uid); return uid; }
+         }
++        // 弱来源：有缓存就一律用缓存，绝不写回。
++        // URL 上的 uid 在「看别人的空间」时就是别人的，拿它读/写收藏等于清空自己的数据。
++        if (cachedUid) return String(cachedUid);
++        const weak = qs("a[href*='space-uid-']");
++        if (weak) {
++            const m = weak.href.match(/space-uid-(\d+)/) || weak.href.match(/[?&]uid=(\d+)/);
++            if (m) return m[1];
++        }
+         const urlUid = new URL(location.href).searchParams.get("uid");
+-        if (urlUid) { GM_setValue("bgsh_uid", urlUid); return urlUid; }
+-        return cachedUid ? String(cachedUid) : null;
++        return urlUid ? String(urlUid) : null;
+     }
+ 
+     function initFavoriteStorage() {
+@@ -3595,7 +3606,9 @@
+             previewCount: "bgsh_preview_count_" + currentUid,
+             poolSize: "bgsh_pool_size_" + currentUid,
+             toolbox: "bgsh_toolbox_" + currentUid,
+-            lastFolder: "bgsh_last_folder_" + currentUid
++            lastFolder: "bgsh_last_folder_" + currentUid,
++            // 自愈备份：目录列表/条目被一次坏写入清空时用它还原
++            backup: "bgsh_favs_backup_" + currentUid
+         };
+         const storedFavs = getJSONValue(favKeys.favs, {});
+         const storedFolders = getJSONValue(favKeys.folders, ["/"]);
+@@ -3619,13 +3632,32 @@
+         lastFolder = String(GM_getValue(favKeys.lastFolder, "/"));
+         if (!folders.includes(lastFolder)) { lastFolder = "/"; GM_setValue(favKeys.lastFolder, "/"); }
+         var changed = false;
++        var folderRestored = false;
+         for (var k in favCache) {
+             if (!favCache.hasOwnProperty(k)) continue;
+             var data = favCache[k];
+             if (!data || typeof data !== "object") continue;
+-            if (!data.folder || !folders.includes(data.folder)) { data.folder = "/"; changed = true; }
++            // 条目里用到、目录列表里却没有的目录 —— 一律补回列表，不把条目降级。
++            // 早先这里是反的：目录列表说了算，缺了就改成「未分类」并存盘。
++            // 于是任何一次列表读空/被覆盖（多标签页互相写、旧版本数据、
++            // 存储写入失败）都会把用户建好的分类永久抹掉。
++            if (!data.folder) { data.folder = "/"; changed = true; }
++            else if (!folders.includes(data.folder)) { folders.push(data.folder); folderRestored = true; }
+             if (data.url) { var norm = normalizeURL(data.url); if (norm && norm !== data.url) { data.url = norm; changed = true; } }
+         }
++        if (folderRestored) changed = true;
++        // 兜底自愈：目录列表整片丢了（只剩 "/"）而备份里还有，就用备份补回来。
++        if (folders.length <= 1) {
++            var backup = getJSONValue(favKeys.backup, null);
++            if (backup && Array.isArray(backup.folders) && backup.folders.length > 1) {
++                backup.folders.forEach(function (f) { if (f && !folders.includes(f)) folders.push(f); });
++                if (backup.favs && typeof backup.favs === "object" && !Array.isArray(backup.favs) && !Object.keys(favCache).length) {
++                    favCache = backup.favs;
++                }
++                changed = true;
++                console.log("[98T] 收藏目录列表为空，已从备份还原 " + backup.folders.length + " 个目录");
++            }
++        }
+         if (changed) saveFavoriteData();
+         return true;
+     }
+@@ -3635,14 +3667,24 @@
+         var data = getJSONValue(favKeys.favs, {});
+         favCache = data && typeof data === "object" && !Array.isArray(data) ? data : {};
+         var savedFolders = getJSONValue(favKeys.folders, ["/"]);
+-        folders = Array.isArray(savedFolders) ? savedFolders : ["/"];
++        folders = Array.isArray(savedFolders) ? savedFolders.map(function (f) { return String(f); }).filter(Boolean) : ["/"];
+         if (!folders.includes("/")) folders.unshift("/");
++        // 和 initFavoriteStorage 一致：以条目为准补齐目录，读到的列表偏短也不丢目录。
++        Object.keys(favCache).forEach(function (k2) {
++            var f = favCache[k2] && favCache[k2].folder;
++            if (f && !folders.includes(f)) folders.push(f);
++        });
+     }
+ 
+     function saveFavoriteData() {
+         if (!favKeys) return;
+         setJSONValue(favKeys.favs, favCache);
+         setJSONValue(favKeys.folders, folders);
++        // 备份只在「确实有内容」时更新。故意清空（侧栏的「清空本地数据」）
++        // 之后不该把空壳当备份，否则下一次加载的自愈会把清掉的数据又拉回来。
++        if (folders.length > 1 || Object.keys(favCache).length > 0) {
++            setJSONValue(favKeys.backup, { folders: folders.slice(), favs: favCache, ts: Date.now() });
++        }
+     }
+ 
+     function formatFolderName(folder) {
+@@ -4074,15 +4116,19 @@
+         return updated2;
+     }
+ 
+-    function cleanEmptyFolders() {
++    function cleanEmptyFolders(keepFolders) {
+         var usedFolders = new Set();
+         for (var k in favCache) {
+             if (!favCache.hasOwnProperty(k)) continue;
+             var f = favCache[k].folder;
+             if (f && f !== "/") usedFolders.add(f);
+         }
++        var keep = keepFolders instanceof Set ? keepFolders : new Set();
+         var before = folders.length;
+-        folders = ["/"].concat(folders.filter(function(f) { return f === "/" || usedFolders.has(f); }).filter(function(f, i, arr) { return arr.indexOf(f) === i; }));
++        // 只清「这一轮自动分类新建、又什么都没装到」的目录。
++        // 用户自己建的目录一律保留 —— 早先按「空就删」处理，
++        // 点一次自动分类，手工建的分类就被清空了。
++        folders = ["/"].concat(folders.filter(function(f) { return f === "/" || keep.has(f) || usedFolders.has(f); }).filter(function(f, i, arr) { return arr.indexOf(f) === i; }));
+         setJSONValue(favKeys.folders, folders);
+         return before - folders.length;
+     }
+@@ -4090,6 +4136,8 @@
+     async function autoCategorizeByAuthor(onProgress) {
+         if (!favKeys) return 0;
+         loadFavoriteData();
++        // 开跑前就存在的目录一个都不许被清掉，只清本轮新建后仍为空的。
++        var keepFolders = new Set(folders);
+         var allEntries = getFavoriteEntries();
+         if (!allEntries.length) return 0;
+         var missingAuthorEntries = allEntries.filter(function(e) { return !getFavoriteAuthor(e[1]) && e[1].url; });
+@@ -4123,7 +4171,7 @@
+             if (typeof onProgress === "function") onProgress(processed, totalGroups, "分类: " + _author + " (" + items.length + "条)");
+         }
+         saveFavoriteData();
+-        var cleaned = cleanEmptyFolders();
++        var cleaned = cleanEmptyFolders(keepFolders);
+         if (cleaned > 0 && typeof onProgress === "function") onProgress(processed, totalGroups, "已清理 " + cleaned + " 个空文件夹");
+         return { moved: moved, cleaned: cleaned };
+     }
