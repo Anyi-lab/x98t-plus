@@ -120,6 +120,9 @@ t("收藏：loadFavoriteData 以条目补齐目录", /Object\.keys\(favCache\)\.
 t("收藏：目录列表空了从备份自愈", /bgsh_favs_backup_/.test(code) && /已从备份还原/.test(code));
 t("收藏：自动分类不删用户建的目录", /function cleanEmptyFolders\(keepFolders\)/.test(code) && /keep\.has\(f\) \|\| usedFolders\.has\(f\)/.test(code));
 
+t("收藏：提供本地救援（扫其它 uid 键）", /function recoverFavoriteStorage/.test(code) && /GM_listValues/.test(code) && /bgshFavoriteRecover/.test(code));
+t("收藏：进页自动救援一次", /autoRecoverReport = recoverFavoriteStorage\(\);/.test(code));
+
 // 5) 版本一致性
 const v = (code.match(/^\/\/\s*@version\s+(\S+)/m) || [])[1];
 const sv = (code.match(/const scriptVer = "v([^"]+)";/) || [])[1];

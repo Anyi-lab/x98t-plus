@@ -1,0 +1,169 @@
+diff --git a/x98t-plus.user.js b/x98t-plus.user.js
+index 2a55e31..9da5fb0 100644
+--- a/x98t-plus.user.js
++++ b/x98t-plus.user.js
+@@ -1,7 +1,7 @@
+ // ==UserScript==
+ // @name         X大哥4.10版+收藏夹
+ // @namespace    https://www.sehuatang.net
+-// @version      4.15.2
++// @version      4.15.3
+ // @description  98堂(原色花堂)官方脚本 高级搜索 作者追更 收藏追更/导出 图片分批懒加载 原图查看 橙金风UI
+ // @author       98堂
+ // @match        *://*.sehuatang.net/*
+@@ -36,7 +36,7 @@
+     "use strict";
+ 
+     // #region 全局变量
+-    const scriptVer = "v4.15.2";
++    const scriptVer = "v4.15.3";
+     let activeTooltips = 0;
+     let toastQueue = [];
+     let isToastShowing = false;
+@@ -4116,6 +4116,77 @@
+         return updated2;
+     }
+ 
++    // 一次性救援：老版本可能把目录记在「另一个 uid」的键下（getUid 认错人），
++    // 或者把条目降级成「未分类」但目录清单本身还在别处。
++    // 这里把本地所有 bgsh_* 键扫一遍，能捞的都捞回来 —— 不联网、只动本地存储。
++    function recoverFavoriteStorage() {
++        if (!favKeys) return { folders: 0, entries: 0, keys: 0 };
++        var keys = typeof GM_listValues === "function" ? (GM_listValues() || []) : [];
++        var folderUnion = [];
++        var favSources = [];
++        var addFolder = function (f) {
++            f = String(f || "").trim();
++            if (!f || f.charAt(0) !== "/") return;
++            if (folderUnion.indexOf(f) < 0) folderUnion.push(f);
++        };
++        addFolder("/");
++        folders.forEach(addFolder);
++        keys.forEach(function (key) {
++            if (key === favKeys.favs || key === favKeys.folders || key === favKeys.backup) return;
++            if (/^bgsh_folders_\d+$/.test(key)) {
++                var arr = getJSONValue(key, []);
++                if (Array.isArray(arr)) arr.forEach(addFolder);
++            } else if (/^bgsh_favs_backup_\d+$/.test(key)) {
++                var bk = getJSONValue(key, null);
++                if (bk && Array.isArray(bk.folders)) bk.folders.forEach(addFolder);
++                if (bk && bk.favs && typeof bk.favs === "object") favSources.push(bk.favs);
++            } else if (/^bgsh_favs_\d+$/.test(key)) {
++                var src = getJSONValue(key, {});
++                if (src && typeof src === "object" && !Array.isArray(src)) favSources.push(src);
++            }
++        });
++        var collectFrom = function (map) {
++            if (!map || typeof map !== "object") return;
++            Object.keys(map).forEach(function (k) {
++                var f = map[k] && map[k].folder;
++                if (f) addFolder(f);
++            });
++        };
++        collectFrom(favCache);
++        favSources.forEach(collectFrom);
++
++        var addedFolders = 0;
++        folderUnion.forEach(function (f) {
++            if (folders.indexOf(f) < 0) { folders.push(f); addedFolders++; }
++        });
++
++        var recovered = 0;
++        favSources.forEach(function (src) {
++            Object.keys(src).forEach(function (favid) {
++                var donor = src[favid];
++                if (!donor || typeof donor !== "object") return;
++                var mine = favCache[favid];
++                if (!mine) {
++                    favCache[favid] = donor;
++                    if (donor.folder && folders.indexOf(donor.folder) < 0) folders.push(donor.folder);
++                    recovered++;
++                    return;
++                }
++                // 本地条目被降级成「未分类」、别的键里还留着原目录 —— 还原它
++                if ((!mine.folder || mine.folder === "/") && donor.folder && donor.folder !== "/") {
++                    mine.folder = donor.folder;
++                    if (folders.indexOf(donor.folder) < 0) folders.push(donor.folder);
++                    recovered++;
++                }
++                if (!mine.title && donor.title) mine.title = donor.title;
++                if (!mine.url && donor.url) mine.url = donor.url;
++                if (!mine.author && donor.author) mine.author = donor.author;
++            });
++        });
++        saveFavoriteData();
++        return { folders: addedFolders, entries: recovered, keys: keys.length };
++    }
++
+     function cleanEmptyFolders(keepFolders) {
+         var usedFolders = new Set();
+         for (var k in favCache) {
+@@ -4626,10 +4697,12 @@
+         var authorButton = createElement("button", { className: "bgsh-customBtn", text: "🖊️ 补齐作者", id: "bgshFavoriteFillAuthors" });
+         var categorizeButton = createElement("button", { className: "bgsh-customBtn", text: "📂 自动分类", id: "bgshFavoriteCategorize" });
+         var resetButton = createElement("button", { className: "bgsh-customBtn", text: "🧹 清空本地数据", id: "bgshFavoriteReset" });
+-        var buttons = [syncPageButton, syncAllButton, authorButton, categorizeButton, resetButton];
++        var recoverButton = createElement("button", { className: "bgsh-customBtn", text: "🩹 找回丢失的目录", id: "bgshFavoriteRecover" });
++        recoverButton.title = "扫描本地存储里其它 uid／旧版本留下的记录，把能恢复的目录和收藏捞回来";
++        var buttons = [syncPageButton, syncAllButton, authorButton, categorizeButton, recoverButton, resetButton];
+         for (var b = 0; b < buttons.length; b++) { buttons[b].style.margin = "8px 0 0"; buttons[b].style.fontSize = "12px"; }
+         resetButton.style.background = "linear-gradient(135deg,#ff6b6b,#ee5a24)"; resetButton.style.color = "#fff";
+-        toolbox.append(addInput, addButton, autoPreviewLabel, countWrapper, poolWrapper, syncInput, syncPageButton, syncAllButton, authorButton, categorizeButton, resetButton);
++        toolbox.append(addInput, addButton, autoPreviewLabel, countWrapper, poolWrapper, syncInput, syncPageButton, syncAllButton, authorButton, categorizeButton, recoverButton, resetButton);
+         sidebar.append(sidebarTitle, tree, toolbox);
+         var main = createElement("main", { id: "bgshFavoriteMain" });
+         Object.assign(main.style, { display: "flex", minWidth: "0", flex: "1", flexDirection: "column" });
+@@ -4660,7 +4733,7 @@
+         Object.assign(list.style, { flex: "1", overflowY: "auto" });
+         main.append(toolbar, list);
+         root.append(sidebar, main);
+-        return { root: root, sidebar: sidebar, tree: tree, toolbox: toolbox, list: list, path: path, addInput: addInput, addButton: addButton, autoPreview: autoPreview, countInput: countInput, poolInput: poolInput, syncInput: syncInput, syncPageButton: syncPageButton, syncAllButton: syncAllButton, authorButton: authorButton, categorizeButton: categorizeButton, resetButton: resetButton, toggleSidebar: toggleSidebar, sort: sort, mode: mode, search: search, updateButton: updateButton, exportButton: exportButton };
++        return { root: root, sidebar: sidebar, tree: tree, toolbox: toolbox, list: list, path: path, addInput: addInput, addButton: addButton, autoPreview: autoPreview, countInput: countInput, poolInput: poolInput, syncInput: syncInput, syncPageButton: syncPageButton, syncAllButton: syncAllButton, authorButton: authorButton, categorizeButton: categorizeButton, recoverButton: recoverButton, resetButton: resetButton, toggleSidebar: toggleSidebar, sort: sort, mode: mode, search: search, updateButton: updateButton, exportButton: exportButton };
+     }
+ 
+     function renderFavoriteTree(ui, renderList2, refreshTree) {
+@@ -5023,6 +5096,14 @@
+         for (var key in favCache) {
+             if (favCache.hasOwnProperty(key)) delete favCache[key].imagePreview;
+         }
++        // 目录列表只剩「未分类」时，先自动扫一遍历史记录 —— 用户不需要先知道有
++        // 这个按钮才点得到：升级后第一次打开收藏页就把能捞的捞回来。
++        var autoRecoverReport = null;
++        if (folders.length <= 1) {
++            autoRecoverReport = recoverFavoriteStorage();
++            if (autoRecoverReport.folders || autoRecoverReport.entries) loadFavoriteData();
++        }
++
+         var ui = createFavoritePageSkeleton();
+         clearElement(mainContent);
+         mainContent.appendChild(ui.root);
+@@ -5241,6 +5322,17 @@
+             } catch (error) { errorLog("自动分类失败:", error); showToast("自动分类失败", "error"); }
+             finally { ui.categorizeButton.disabled = false; ui.categorizeButton.textContent = "📂 自动分类"; }
+         });
++        addSafeEventListener(ui.recoverButton, "click", function() {
++            var report = recoverFavoriteStorage();
++            loadFavoriteData();
++            renderTree();
++            renderList();
++            if (report.folders || report.entries) {
++                showToast("🩹 已找回 " + report.folders + " 个目录、" + report.entries + " 条收藏", "success", 5000);
++            } else {
++                showToast("没有找到可恢复的记录（扫描了 " + report.keys + " 个本地键）", "warning", 5000);
++            }
++        });
+         addSafeEventListener(ui.resetButton, "click", function() {
+             if (!window.confirm("确定清空本地收藏数据吗？此操作不会取消服务器收藏。")) return;
+             favCache = {}; folders = ["/"]; currentFolder = "ALL"; lastFolder = "/";
+@@ -5281,6 +5373,11 @@
+         if (importedFavorites > 0) {
+             showToast("已识别并导入 " + importedFavorites + " 条网站收藏", "success");
+         }
++        if (autoRecoverReport && (autoRecoverReport.folders || autoRecoverReport.entries)) {
++            setTimeout(function () {
++                showToast("🩹 已从本地记录找回 " + autoRecoverReport.folders + " 个目录、" + autoRecoverReport.entries + " 条收藏", "success", 6000);
++            }, 900);
++        }
+     }
+ 
+     function initFavorites() {

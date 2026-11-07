@@ -94,6 +94,26 @@ const check = (ok, msg) => { console.log((ok ? 'PASS ' : 'FAIL ') + msg); if (!o
   check(fourth.tree().includes('📂 测试分类') && fourth.tree().includes('📂 另一个分类'),
     '目录列表空了但备份还在时，从备份还原');
 
+  // ===== 场景 5：目录记在「另一个 uid」的键下（getUid 认错人留下的）=====
+  const store3 = {};
+  store3['bgsh_uid'] = UID;
+  store3[FOLDERS_KEY] = ['/'];
+  store3[FAVS_KEY] = {
+    222: { tid: '8', title: '帖子B', url: '/forum.php?mod=viewthread&tid=8', folder: '/', processed: false, author: '' },
+  };
+  // 旧记录：当年被写成别人的 uid
+  store3['bgsh_folders_99999'] = ['/', '/老分类甲', '/老分类乙'];
+  store3['bgsh_favs_99999'] = {
+    222: { tid: '8', title: '帖子B', url: '/forum.php?mod=viewthread&tid=8', folder: '/老分类甲', processed: false, author: '' },
+    333: { tid: '7', title: '帖子C', url: '/forum.php?mod=viewthread&tid=7', folder: '/老分类乙', processed: false, author: '' },
+  };
+  const fifth = await boot({ store: store3 });
+  check(fifth.tree().includes('📂 老分类甲') && fifth.tree().includes('📂 老分类乙'),
+    '自动从别的 uid 键里找回目录：' + JSON.stringify(fifth.tree()));
+  check(store3[FAVS_KEY]['222'] && store3[FAVS_KEY]['222'].folder === '/老分类甲',
+    '被降级成「未分类」的条目回到了原目录');
+  check(!!store3[FAVS_KEY]['333'], '缺的条目被补回来');
+
   // ===== 场景 4：他人 space-uid 链接不能把命名空间带偏 =====
   const store2 = { bgsh_uid: UID, [FOLDERS_KEY]: ['/', '/我的目录'] };
   const stranger = await boot({ page: pageWithStranger, url: 'https://www.sehuatang.org/forum.php?mod=viewthread&tid=1', store: store2 });
