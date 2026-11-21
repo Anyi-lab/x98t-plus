@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X大哥4.10版+收藏夹
 // @namespace    https://www.sehuatang.net
-// @version      4.16.0
+// @version      4.17.0
 // @description  98堂(原色花堂)官方脚本 高级搜索 作者追更 收藏追更/导出 图片分批懒加载 原图查看 橙金风UI
 // @author       98堂
 // @match        *://*.sehuatang.net/*
@@ -36,7 +36,7 @@
     "use strict";
 
     // #region 全局变量
-    const scriptVer = "v4.16.0";
+    const scriptVer = "v4.17.0";
     let activeTooltips = 0;
     let toastQueue = [];
     let isToastShowing = false;
@@ -2747,7 +2747,10 @@
     const createButton = (id, text, clickFunction, className = "bgsh-customBtn") => {
         const button = document.createElement("button");
         button.id = id;
-        button.innerText = text;
+        // 用 textContent 而不是 innerText：innerText 是布局相关属性，
+        // 在没有布局的环境（测试里的 jsdom）里赋值不生效，按钮会是空白；
+        // 纯文本标签两者在浏览器里结果一致。
+        button.textContent = text;
         button.className = className;
         button.addEventListener("click", clickFunction);
         return button;
@@ -7723,6 +7726,86 @@
     }
     // #endregion
 
+    // #region 首页热门一键打开
+    // 首页那个热门轮播（.slidebox .slideshow）一屏一张，右上角是 1..20 的
+    // 数字导航 —— 想全看一遍得点二十次。这里加一条小工具栏：一次全部打开，
+    // 或者把链接全复制走。
+    function collectHotTopicLinks() {
+        var seen = Object.create(null);
+        var result = [];
+        var add = function (a) {
+            if (!a) return;
+            var href = a.getAttribute("href") || "";
+            if (!href || /^javascript:/i.test(href) || href === "#") return;
+            var url;
+            try { url = new URL(href, location.href).href; } catch (error) { return; }
+            if (seen[url]) return;
+            seen[url] = true;
+            var title = (a.getAttribute("title") || "").replace(/\s+/g, " ").trim();
+            if (!title) {
+                var box = a.parentElement;
+                var span = box && box.querySelector(".title");
+                title = span ? span.textContent.replace(/\s+/g, " ").trim() : (a.textContent || "").trim();
+            }
+            result.push({ url: url, title: title });
+        };
+        // 首页热门轮播：.slidebox > ul.slideshow > li > a
+        document.querySelectorAll(".slidebox .slideshow li > a[href], .slideshow li > a[href]").forEach(add);
+        if (!result.length) {
+            document.querySelectorAll(".slidebox a[href*='thread-'], .slideshow a[href*='thread-']").forEach(add);
+        }
+        return result;
+    }
+
+    function insertHotTopicsOpenAll(settings) {
+        if (settings && settings.blockingIndex) return;   // 首页已被整块移除
+        var box = document.querySelector(".slidebox") || document.querySelector(".slideshow");
+        if (!box) return;
+        if (document.getElementById("bgshHotOpenAll")) return;
+        var items = collectHotTopicLinks();
+        if (!items.length) return;
+
+        var bar = document.createElement("div");
+        bar.id = "bgshHotOpenAll";
+        bar.style.cssText = "position:absolute;top:6px;right:6px;z-index:9;display:flex;gap:6px;align-items:center;";
+        // .slidebox 本身没有定位，得给它加上，按钮才会贴在轮播右上角
+        if (getComputedStyle(box).position === "static") box.style.position = "relative";
+
+        var openBtn = createButton("bgshHotOpenAllBtn", "🔗 全部打开 (" + items.length + ")", function () {
+            var list = collectHotTopicLinks();
+            if (!list.length) { showToast("❌ 没找到热门主题链接", "error", 2000); return; }
+            var blocked = 0;
+            list.forEach(function (item) {
+                var win = null;
+                try { win = window.open(item.url, "_blank", "noopener"); } catch (error) { win = null; }
+                if (!win) blocked++;
+            });
+            if (blocked > 0) showToast("⚠️ " + blocked + " 个标签被浏览器拦下，请允许本页弹窗后重试", "warning", 4200);
+            else showToast("✅ 已打开 " + list.length + " 个热门主题", "success", 2000);
+        });
+        openBtn.title = "把首页热门轮播里的主题一次性全部打开";
+        openBtn.style.cssText = "width:auto;margin:0;padding:5px 10px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.25);";
+
+        var copyBtn = createButton("bgshHotCopyAllBtn", "📋 复制", function () {
+            var list = collectHotTopicLinks();
+            if (!list.length) { showToast("❌ 没找到热门主题链接", "error", 2000); return; }
+            var text = list.map(function (item, index) {
+                return (index + 1) + ". " + (item.title ? item.title + "\n" : "") + item.url;
+            }).join("\n");
+            copyToClipboard(text, function () {
+                showToast("✅ 已复制 " + list.length + " 条热门链接", "success", 2000);
+            }, function () {
+                showToast("复制失败，浏览器拒绝了剪贴板权限", "error", 2400);
+            });
+        });
+        copyBtn.title = "复制全部热门主题的标题和链接";
+        copyBtn.style.cssText = "width:auto;margin:0;padding:5px 10px;font-size:12px;background:linear-gradient(135deg,#eeeeee,#dddddd);color:#555;box-shadow:0 2px 8px rgba(0,0,0,.25);";
+
+        bar.append(openBtn, copyBtn);
+        box.appendChild(bar);
+    }
+    // #endregion
+
     // #region 一键打开全部图片（帖子页）
     // 帖子正文常常一次贴十几二十张图（截图里那种 1..20 的编号），
     // 想存下来只能一张张点。这里给一个入口：把正文里所有图收齐，
@@ -12535,6 +12618,7 @@
         setupPreviewWheelScaling();
 
         setupImageZoom();
+        insertHotTopicsOpenAll(settings);
 
         const buttonContainer = createButtonContainer();
         buttonContainer.style.display = settings.menuButtonIsVisible ? "flex" : "none";

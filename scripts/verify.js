@@ -131,6 +131,14 @@ t("图片：缩略图强制 loading=lazy", /thumb\.setAttribute\("loading", "laz
 t("图片：工具栏入口已接入", /insertOpenAllImagesButton\(buttonContainer\);/.test(code));
 t("图片：不设 referrerPolicy（避免图床判盗链）", code.indexOf('referrerPolicy = "no-referrer"') === -1);
 
+// 4.17.0 首页热门一键打开
+t("热门：collectHotTopicLinks 收轮播链接", /function collectHotTopicLinks\(\)/.test(code) && /\.slidebox \.slideshow li > a/.test(code));
+t("热门：一键全部打开", /bgshHotOpenAllBtn/.test(code) && /已打开 " \+ list\.length \+ " 个热门主题/.test(code));
+t("热门：可复制全部链接", /bgshHotCopyAllBtn/.test(code));
+t("热门：已接入 baseFunction", /insertHotTopicsOpenAll\(settings\);/.test(code));
+t("热门：屏蔽首页时不插入", /if \(settings && settings\.blockingIndex\) return;/.test(code));
+t("按钮文案用 textContent（innerText 在无布局环境不生效）", /button\.textContent = text;/.test(code) && code.indexOf("button.innerText = text;") === -1);
+
 // 5) 版本一致性
 const v = (code.match(/^\/\/\s*@version\s+(\S+)/m) || [])[1];
 const sv = (code.match(/const scriptVer = "v([^"]+)";/) || [])[1];
