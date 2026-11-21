@@ -123,6 +123,14 @@ t("收藏：自动分类不删用户建的目录", /function cleanEmptyFolders\(
 t("收藏：提供本地救援（扫其它 uid 键）", /function recoverFavoriteStorage/.test(code) && /GM_listValues/.test(code) && /bgshFavoriteRecover/.test(code));
 t("收藏：进页自动救援一次", /autoRecoverReport = recoverFavoriteStorage\(\);/.test(code));
 
+// 4.16.0 一键打开全部图片
+t("图片：collectThreadImages 收正文图", /function collectThreadImages\(\)/.test(code) && /isPostContentImage\(img\)/.test(code));
+t("图片：浮层支持全部新标签打开", /bgshAllImgOpenAll/.test(code) && /window\.open\(u, "_blank", "noopener"\)/.test(code));
+t("图片：浮层支持复制全部链接", /bgshAllImgCopy/.test(code) && /urls\.join\("\\n"\)/.test(code));
+t("图片：缩略图强制 loading=lazy", /thumb\.setAttribute\("loading", "lazy"\)/.test(code));
+t("图片：工具栏入口已接入", /insertOpenAllImagesButton\(buttonContainer\);/.test(code));
+t("图片：不设 referrerPolicy（避免图床判盗链）", code.indexOf('referrerPolicy = "no-referrer"') === -1);
+
 // 5) 版本一致性
 const v = (code.match(/^\/\/\s*@version\s+(\S+)/m) || [])[1];
 const sv = (code.match(/const scriptVer = "v([^"]+)";/) || [])[1];

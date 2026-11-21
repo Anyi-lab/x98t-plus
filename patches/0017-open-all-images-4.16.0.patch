@@ -1,0 +1,183 @@
+diff --git a/x98t-plus.user.js b/x98t-plus.user.js
+index 9da5fb0..71abe4b 100644
+--- a/x98t-plus.user.js
++++ b/x98t-plus.user.js
+@@ -1,7 +1,7 @@
+ // ==UserScript==
+ // @name         X大哥4.10版+收藏夹
+ // @namespace    https://www.sehuatang.net
+-// @version      4.15.3
++// @version      4.16.0
+ // @description  98堂(原色花堂)官方脚本 高级搜索 作者追更 收藏追更/导出 图片分批懒加载 原图查看 橙金风UI
+ // @author       98堂
+ // @match        *://*.sehuatang.net/*
+@@ -36,7 +36,7 @@
+     "use strict";
+ 
+     // #region 全局变量
+-    const scriptVer = "v4.15.3";
++    const scriptVer = "v4.16.0";
+     let activeTooltips = 0;
+     let toastQueue = [];
+     let isToastShowing = false;
+@@ -7505,6 +7505,7 @@
+         if (settings.showFastCopy) buttonContainer.appendChild(createFastCopyButton());
+ 
+         setupPostImageLazyLoading(buttonContainer);
++        insertOpenAllImagesButton(buttonContainer);
+         insertMergeDownloadButtons(buttonContainer);
+         initInfiniteScroll("isPostPage");
+         showAvatarEvent();
+@@ -7722,6 +7723,152 @@
+     }
+     // #endregion
+ 
++    // #region 一键打开全部图片（帖子页）
++    // 帖子正文常常一次贴十几二十张图（截图里那种 1..20 的编号），
++    // 想存下来只能一张张点。这里给一个入口：把正文里所有图收齐，
++    // 在一个浮层里全部列出来，支持「全部新标签打开」和「复制全部链接」。
++    var IMAGE_URL_RE = /\.(jpe?g|png|gif|webp|bmp|avif)(\?|#|$)/i;
++    var IMAGE_NOISE_RE = /static\/image\/(?:smiley|common)|avatar|\/uc_server\/|none\.gif|smiley/i;
++
++    function collectThreadImages() {
++        var seen = Object.create(null);
++        var result = [];
++        var add = function (url) {
++            if (!url || !/^https?:\/\//i.test(url)) return;
++            if (IMAGE_NOISE_RE.test(url)) return;
++            // 图床地址常常没有扩展名（tu.xxx/tupian/forum/202610/21/xxx），
++            // 所以「有扩展名」或「明显是图床/附件路径」都收。
++            if (!IMAGE_URL_RE.test(url) && !/tupian|attachment|\/forum\/\d{6}|tu\./i.test(url)) return;
++            if (seen[url]) return;
++            seen[url] = true;
++            result.push(url);
++        };
++        document.querySelectorAll("img").forEach(function (img) {
++            if (!isPostContentImage(img)) return;
++            add(getOriginalImageURL(img));
++        });
++        // 有些模板正文里给的是 <a href="....jpg"> 而不是 <img>
++        document.querySelectorAll(".t_f a[href], [id^='postmessage_'] a[href], .pcb a[href], .message a[href]").forEach(function (a) {
++            var href = a.getAttribute("href") || "";
++            if (!IMAGE_URL_RE.test(href)) return;
++            try { add(new URL(href, location.href).href); } catch (error) {}
++        });
++        return result;
++    }
++
++    function openAllThreadImages() {
++        if (document.querySelector(".bgsh-allimg-overlay")) return;
++        // 先把还在懒加载占位状态的图放开，避免缩略图全是占位图
++        try { loadAllDeferredPostImages(); } catch (error) {}
++        var urls = collectThreadImages();
++        if (!urls.length) {
++            showToast("❌ 此页正文里没有找到图片", "error", 2200);
++            return;
++        }
++
++        var overlay = document.createElement("div");
++        overlay.className = "bgsh-allimg-overlay";
++        overlay.style.cssText = "position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;padding:16px;";
++
++        var panel = document.createElement("div");
++        panel.style.cssText = "display:flex;flex-direction:column;width:min(1180px,96vw);max-height:88vh;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);";
++
++        var header = document.createElement("div");
++        header.style.cssText = "display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid #eee;background:#fcfcfc;flex-shrink:0;";
++        var title = document.createElement("strong");
++        title.textContent = "🖼️ 全部图片（" + urls.length + " 张）";
++        title.style.cssText = "flex:1;color:#ff6600;font-size:14px;";
++
++        var openAllButton = createButton("bgshAllImgOpenAll", "🔗 全部新标签打开", function () {
++            // 同一个用户手势里连续 window.open，多数浏览器会放行；
++            // 被拦下时提示一次，别让人以为是没反应。
++            var blocked = 0;
++            urls.forEach(function (u) {
++                var win = null;
++                try { win = window.open(u, "_blank", "noopener"); } catch (error) { win = null; }
++                if (!win) blocked++;
++            });
++            if (blocked > 0) {
++                showToast("⚠️ " + blocked + " 个标签被浏览器拦下，请允许本页弹窗后重试", "warning", 4200);
++            } else {
++                showToast("✅ 已打开 " + urls.length + " 个标签", "success", 2000);
++            }
++        });
++        openAllButton.style.cssText = "width:auto;margin:0;padding:6px 12px;font-size:12px;";
++
++        var copyButton = createButton("bgshAllImgCopy", "📋 复制全部链接", function () {
++            copyToClipboard(urls.join("\n"), function () {
++                showToast("✅ 已复制 " + urls.length + " 条图片链接", "success", 2000);
++            }, function () {
++                showToast("复制失败，浏览器拒绝了剪贴板权限", "error", 2400);
++            });
++        });
++        copyButton.style.cssText = "width:auto;margin:0;padding:6px 12px;font-size:12px;background:linear-gradient(135deg,#eeeeee,#dddddd);color:#555;";
++
++        var closeButton = document.createElement("button");
++        closeButton.type = "button";
++        closeButton.className = "bgsh-customBtn";
++        closeButton.textContent = "✕ 关闭";
++        closeButton.style.cssText = "width:auto;margin:0;padding:6px 12px;font-size:12px;";
++        header.append(title, openAllButton, copyButton, closeButton);
++
++        var grid = document.createElement("div");
++        grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px;padding:12px;overflow-y:auto;min-height:0;";
++
++        urls.forEach(function (url, index) {
++            var cell = document.createElement("a");
++            cell.href = url;
++            cell.target = "_blank";
++            cell.rel = "noopener noreferrer";
++            cell.style.cssText = "position:relative;display:block;aspect-ratio:1/1;border:1px solid #eee;border-radius:6px;overflow:hidden;background:#f6f6f6;";
++            var thumb = document.createElement("img");
++            // 用 setAttribute 而不是 IDL 属性：老浏览器/测试环境里 loading 这类
++            // IDL 属性不一定反射成特性，设了等于没设，20 张图会一次全请求。
++            thumb.setAttribute("loading", "lazy");
++            thumb.setAttribute("decoding", "async");
++            // 不要设 referrerPolicy：图床虽然有防盗链，但按站点默认行为发 Referer
++            // 最稳；改成 no-referrer 反而可能被某些图床判成直链盗用。
++            thumb.style.cssText = "width:100%;height:100%;object-fit:cover;display:block;";
++            thumb.src = url;
++            var badge = document.createElement("span");
++            badge.textContent = String(index + 1);
++            badge.style.cssText = "position:absolute;top:4px;left:4px;min-width:20px;height:20px;line-height:20px;text-align:center;border-radius:10px;background:rgba(0,0,0,.62);color:#fff;font-size:12px;font-weight:bold;padding:0 5px;";
++            cell.append(thumb, badge);
++            grid.appendChild(cell);
++        });
++
++        panel.append(header, grid);
++        overlay.appendChild(panel);
++
++        var close = function () {
++            document.removeEventListener("keydown", onKeyDown, true);
++            overlay.remove();
++        };
++        var onKeyDown = function (event) {
++            if (event.key === "Escape") { event.stopPropagation(); close(); }
++        };
++        closeButton.addEventListener("click", close);
++        overlay.addEventListener("click", function (event) { if (event.target === overlay) close(); });
++        document.addEventListener("keydown", onKeyDown, true);
++        document.body.appendChild(overlay);
++    }
++
++    function insertOpenAllImagesButton(buttonContainer) {
++        if (!buttonContainer || document.getElementById("bgshOpenAllImagesButton")) return;
++        var button = createButton("bgshOpenAllImagesButton", "🖼️ 全部图片", openAllThreadImages);
++        button.title = "把正文里所有图片列出来，可一键全部打开或复制全部链接";
++        button.className = "bgsh-customBtn bgsh-btn-sub";
++        buttonContainer.appendChild(button);
++        // 图片是懒加载的，进页面时数量可能还没齐；延迟刷新一下按钮上的张数。
++        var refresh = function () {
++            var count = collectThreadImages().length;
++            button.textContent = count > 0 ? "🖼️ 全部图片 (" + count + ")" : "🖼️ 全部图片";
++        };
++        setTimeout(refresh, 1200);
++        setTimeout(refresh, 4000);
++    }
++    // #endregion
++
+     // #region 帖子列表页功能 (保持原样)
+     function createFastPostButton() {
+         return createButton("fastPostButton", "✏️ 快速发帖", function () {
