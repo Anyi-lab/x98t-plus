@@ -139,6 +139,11 @@ t("热门：已接入 baseFunction", /insertHotTopicsOpenAll\(settings\);/.test(
 t("热门：屏蔽首页时不插入", /if \(settings && settings\.blockingIndex\) return;/.test(code));
 t("按钮文案用 textContent（innerText 在无布局环境不生效）", /button\.textContent = text;/.test(code) && code.indexOf("button.innerText = text;") === -1);
 
+// 4.17.1 浮动工具栏贴右边
+t("工具栏：固定在右边（right:0 / left:auto）", /\.bgsh-toolbar \{[\s\S]{0,300}?right: 0;[\s\S]{0,80}?left: auto;/.test(code));
+t("工具栏：按钮只保留左侧圆角", /border-radius: 10px 0 0 10px;/.test(code));
+t("工具栏：菜单按钮也贴右边", /menuButton\.style\.right = '0px';/.test(code) && code.indexOf('menuButton.style.right = \'12px\'') === -1);
+
 // 5) 版本一致性
 const v = (code.match(/^\/\/\s*@version\s+(\S+)/m) || [])[1];
 const sv = (code.match(/const scriptVer = "v([^"]+)";/) || [])[1];

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X大哥4.10版+收藏夹
 // @namespace    https://www.sehuatang.net
-// @version      4.17.0
+// @version      4.17.1
 // @description  98堂(原色花堂)官方脚本 高级搜索 作者追更 收藏追更/导出 图片分批懒加载 原图查看 橙金风UI
 // @author       98堂
 // @match        *://*.sehuatang.net/*
@@ -36,7 +36,7 @@
     "use strict";
 
     // #region 全局变量
-    const scriptVer = "v4.17.0";
+    const scriptVer = "v4.17.1";
     let activeTooltips = 0;
     let toastQueue = [];
     let isToastShowing = false;
@@ -1339,13 +1339,19 @@
                 gap: 6px;
                 position: fixed;
                 top: 50%;
-                right: 12px;
+                right: 0;
+                left: auto;
                 z-index: 1000;
                 transform: translateY(-50%);
                 max-height: 80vh;
                 overflow-y: auto;
                 padding: 4px 0;
                 scrollbar-width: thin;
+            }
+            /* 贴右边之后按钮只保留左侧圆角，看起来是「挂在右侧的抽屉」，
+               而不是浮在页面中间的一串胶囊。 */
+            .bgsh-toolbar .bgsh-customBtn {
+                border-radius: 10px 0 0 10px;
             }
             /* 帖子页按钮多，分组：分隔线与下载组高亮，避免一长条同色按钮糊成一片 */
             .bgsh-toast-icon[hidden] { display: none !important; }
@@ -2679,7 +2685,7 @@
                 .bgsh-switch-label { padding: 4px 0; min-height: 28px; }
                 .bgsh-switch-text { font-size: 12px; }
                 .bgsh-toolbar {
-                    right: 6px;
+                    right: 0;
                     gap: 4px;
                 }
                 .bgsh-toolbar .bgsh-customBtn {
@@ -11186,7 +11192,7 @@
             justifyContent: "center",
             lineHeight: "1",
             outline: "none",
-            right: "12px",
+            right: "0px",
         });
 
         menuButton.addEventListener('mouseenter', () => {
@@ -11249,7 +11255,7 @@
 
             if (containerRect.top === 0 && containerRect.bottom === 0) {
                 menuButton.style.top = '80px';
-                menuButton.style.right = '12px';
+                menuButton.style.right = '0px';
                 return;
             }
 
@@ -11266,7 +11272,7 @@
             }
 
             menuButton.style.top = topPos + 'px';
-            menuButton.style.right = '12px';
+            menuButton.style.right = '0px';
         });
     }
 
