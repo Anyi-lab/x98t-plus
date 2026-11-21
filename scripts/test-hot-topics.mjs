@@ -62,8 +62,13 @@ const openBtn = doc.getElementById('bgshHotOpenAllBtn');
 check(!!openBtn, '有「全部打开」按钮');
 check(openBtn && openBtn.textContent.includes('(' + slides.length + ')'),
   '按钮张数 = 幻灯片数（' + (openBtn ? openBtn.textContent : '') + '）');
-check(bar && bar.parentElement && bar.parentElement.classList.contains('slidebox'),
-  '工具栏挂在 .slidebox 内（贴轮播右上角）');
+// 关键回归：工具栏不能压在图/页码上 —— 改成轮播后面的独立一行
+const sb = doc.querySelector('.slidebox');
+check(!!sb, '样本里有 .slidebox');
+check(bar && bar.parentElement !== sb, '工具栏不再是 .slidebox 的子元素（不会压住封面和 1..20 页码）');
+check(bar && sb && bar.previousElementSibling === sb, '工具栏紧跟在轮播后面（同一父节点）');
+const bstyle = bar ? bar.style : {};
+check(bstyle.position !== 'absolute', '工具栏不是绝对定位（不会浮在图上层）');
 
 // 只插一份
 check(doc.querySelectorAll('#bgshHotOpenAll').length === 1, '工具栏只插了一份');

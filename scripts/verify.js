@@ -144,6 +144,12 @@ t("工具栏：固定在右边（right:0 / left:auto）", /\.bgsh-toolbar \{[\s\
 t("工具栏：按钮只保留左侧圆角", /border-radius: 10px 0 0 10px;/.test(code));
 t("工具栏：菜单按钮也贴右边", /menuButton\.style\.right = '0px';/.test(code) && code.indexOf('menuButton.style.right = \'12px\'') === -1);
 
+// 4.17.2 热门按钮不再压住封面/页码
+t("热门：工具栏不在轮播容器内", /host\.insertBefore\(bar, box\.nextSibling\)/.test(code));
+t("热门：工具栏不是绝对定位", code.indexOf('position:absolute;top:6px;right:6px;z-index:9') === -1);
+t("热门：工具栏右对齐成一行", /justify-content:flex-end;gap:6px/.test(code));
+t("热门：不再给 .slidebox 打 position:relative", code.indexOf('getComputedStyle(box).position') === -1);
+
 // 5) 版本一致性
 const v = (code.match(/^\/\/\s*@version\s+(\S+)/m) || [])[1];
 const sv = (code.match(/const scriptVer = "v([^"]+)";/) || [])[1];
