@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X大哥4.10版+收藏夹
 // @namespace    https://www.sehuatang.net
-// @version      4.17.2
+// @version      4.18.0
 // @description  98堂(原色花堂)官方脚本 高级搜索 作者追更 收藏追更/导出 图片分批懒加载 原图查看 橙金风UI
 // @author       98堂
 // @match        *://*.sehuatang.net/*
@@ -36,7 +36,7 @@
     "use strict";
 
     // #region 全局变量
-    const scriptVer = "v4.17.2";
+    const scriptVer = "v4.18.0";
     let activeTooltips = 0;
     let toastQueue = [];
     let isToastShowing = false;
@@ -1339,19 +1339,13 @@
                 gap: 6px;
                 position: fixed;
                 top: 50%;
-                right: 0;
-                left: auto;
+                right: 12px;
                 z-index: 1000;
                 transform: translateY(-50%);
                 max-height: 80vh;
                 overflow-y: auto;
                 padding: 4px 0;
                 scrollbar-width: thin;
-            }
-            /* 贴右边之后按钮只保留左侧圆角，看起来是「挂在右侧的抽屉」，
-               而不是浮在页面中间的一串胶囊。 */
-            .bgsh-toolbar .bgsh-customBtn {
-                border-radius: 10px 0 0 10px;
             }
             /* 帖子页按钮多，分组：分隔线与下载组高亮，避免一长条同色按钮糊成一片 */
             .bgsh-toast-icon[hidden] { display: none !important; }
@@ -2685,7 +2679,7 @@
                 .bgsh-switch-label { padding: 4px 0; min-height: 28px; }
                 .bgsh-switch-text { font-size: 12px; }
                 .bgsh-toolbar {
-                    right: 0;
+                    right: 6px;
                     gap: 4px;
                 }
                 .bgsh-toolbar .bgsh-customBtn {
@@ -7763,22 +7757,15 @@
         return result;
     }
 
-    function insertHotTopicsOpenAll(settings) {
-        if (settings && settings.blockingIndex) return;   // 首页已被整块移除
-        var box = document.querySelector(".slidebox") || document.querySelector(".slideshow");
-        if (!box) return;
-        if (document.getElementById("bgshHotOpenAll")) return;
+    // 首页热门轮播的入口挂在右侧浮动工具栏里，跟 搜索/收藏夹/关注作者 排在一起。
+    // 之前是浮在轮播图上的一块 action bar，压住封面和 1..20 的页码，撤掉了。
+    function appendHotTopicsButtons(buttonContainer) {
+        if (!buttonContainer) return;
+        if (document.getElementById("bgshHotOpenAllBtn")) return;
         var items = collectHotTopicLinks();
-        if (!items.length) return;
+        if (!items.length) return;   // 不是首页 / 没有轮播，就不加这两个按钮
 
-        var bar = document.createElement("div");
-        bar.id = "bgshHotOpenAll";
-        // 之前用 absolute 挂在轮播右上角，结果正好压在那排 1..20 的页码和
-        // 封面图上（截图里就是压在 6/7/11/12 上）。改成普通流里的一行，
-        // 右对齐排在轮播下面 —— 不盖图、不盖页码，也不跟着轮播轮换被裁掉。
-        bar.style.cssText = "display:flex;justify-content:flex-end;gap:6px;align-items:center;padding:4px 2px 2px;margin-top:2px;";
-
-        var openBtn = createButton("bgshHotOpenAllBtn", "🔗 全部打开 (" + items.length + ")", function () {
+        var openBtn = createButton("bgshHotOpenAllBtn", "🔥 打开热门 (" + items.length + ")", function () {
             var list = collectHotTopicLinks();
             if (!list.length) { showToast("❌ 没找到热门主题链接", "error", 2000); return; }
             var blocked = 0;
@@ -7791,9 +7778,9 @@
             else showToast("✅ 已打开 " + list.length + " 个热门主题", "success", 2000);
         });
         openBtn.title = "把首页热门轮播里的主题一次性全部打开";
-        openBtn.style.cssText = "width:auto;margin:0;padding:5px 10px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.25);";
+        buttonContainer.appendChild(openBtn);
 
-        var copyBtn = createButton("bgshHotCopyAllBtn", "📋 复制", function () {
+        var copyBtn = createButton("bgshHotCopyAllBtn", "📋 热门链接", function () {
             var list = collectHotTopicLinks();
             if (!list.length) { showToast("❌ 没找到热门主题链接", "error", 2000); return; }
             var text = list.map(function (item, index) {
@@ -7806,14 +7793,7 @@
             });
         });
         copyBtn.title = "复制全部热门主题的标题和链接";
-        copyBtn.style.cssText = "width:auto;margin:0;padding:5px 10px;font-size:12px;background:linear-gradient(135deg,#eeeeee,#dddddd);color:#555;box-shadow:0 2px 8px rgba(0,0,0,.25);";
-
-        bar.append(openBtn, copyBtn);
-        // 插在轮播容器后面（同一父节点），成为独立一行；
-        // 父节点拿不到就退回插在轮播内部末尾。
-        var host = box.parentNode || box;
-        if (box.nextSibling) host.insertBefore(bar, box.nextSibling);
-        else host.appendChild(bar);
+        buttonContainer.appendChild(copyBtn);
     }
     // #endregion
 
@@ -11197,7 +11177,7 @@
             justifyContent: "center",
             lineHeight: "1",
             outline: "none",
-            right: "0px",
+            right: "12px",
         });
 
         menuButton.addEventListener('mouseenter', () => {
@@ -11260,7 +11240,7 @@
 
             if (containerRect.top === 0 && containerRect.bottom === 0) {
                 menuButton.style.top = '80px';
-                menuButton.style.right = '0px';
+                menuButton.style.right = '12px';
                 return;
             }
 
@@ -11277,7 +11257,7 @@
             }
 
             menuButton.style.top = topPos + 'px';
-            menuButton.style.right = '0px';
+            menuButton.style.right = '12px';
         });
     }
 
@@ -12629,7 +12609,6 @@
         setupPreviewWheelScaling();
 
         setupImageZoom();
-        insertHotTopicsOpenAll(settings);
 
         const buttonContainer = createButtonContainer();
         buttonContainer.style.display = settings.menuButtonIsVisible ? "flex" : "none";
@@ -12659,6 +12638,10 @@
         buttonContainer.appendChild(followedAuthorsBtn);
 
         buttonContainer.appendChild(createPreviewSizeAdjustButton());
+
+        // 首页热门：入口放进右侧边栏，跟其它按钮排在一起
+        if (!settings.blockingIndex) appendHotTopicsButtons(buttonContainer);
+
 
         await delegatePageHandlers(settings, buttonContainer);
         if (settings.displayThreadBuyInfo && getLoadedSaleThreadLinks().length > 0) {

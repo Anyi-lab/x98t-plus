@@ -135,20 +135,20 @@ t("图片：不设 referrerPolicy（避免图床判盗链）", code.indexOf('ref
 t("热门：collectHotTopicLinks 收轮播链接", /function collectHotTopicLinks\(\)/.test(code) && /\.slidebox \.slideshow li > a/.test(code));
 t("热门：一键全部打开", /bgshHotOpenAllBtn/.test(code) && /已打开 " \+ list\.length \+ " 个热门主题/.test(code));
 t("热门：可复制全部链接", /bgshHotCopyAllBtn/.test(code));
-t("热门：已接入 baseFunction", /insertHotTopicsOpenAll\(settings\);/.test(code));
-t("热门：屏蔽首页时不插入", /if \(settings && settings\.blockingIndex\) return;/.test(code));
+t("热门：已接入 baseFunction 的边栏", /appendHotTopicsButtons\(buttonContainer\);/.test(code));
+t("热门：函数内有空容器保护", /function appendHotTopicsButtons\(buttonContainer\) \{\s*\n\s*if \(!buttonContainer\) return;/.test(code));
 t("按钮文案用 textContent（innerText 在无布局环境不生效）", /button\.textContent = text;/.test(code) && code.indexOf("button.innerText = text;") === -1);
 
-// 4.17.1 浮动工具栏贴右边
-t("工具栏：固定在右边（right:0 / left:auto）", /\.bgsh-toolbar \{[\s\S]{0,300}?right: 0;[\s\S]{0,80}?left: auto;/.test(code));
-t("工具栏：按钮只保留左侧圆角", /border-radius: 10px 0 0 10px;/.test(code));
-t("工具栏：菜单按钮也贴右边", /menuButton\.style\.right = '0px';/.test(code) && code.indexOf('menuButton.style.right = \'12px\'') === -1);
+// 4.18.0：撤销 4.17.1 的贴边改动（工具栏回到 right:12px、四角圆角）
+t("工具栏：回到 right:12px", /\.bgsh-toolbar \{[\s\S]{0,260}?right: 12px;/.test(code));
+t("工具栏：不再有贴边残留（left:auto / 左侧圆角）", code.indexOf('border-radius: 10px 0 0 10px') === -1);
+t("工具栏：菜单按钮回到 right 12px", /menuButton\.style\.right = '12px';/.test(code));
 
-// 4.17.2 热门按钮不再压住封面/页码
-t("热门：工具栏不在轮播容器内", /host\.insertBefore\(bar, box\.nextSibling\)/.test(code));
-t("热门：工具栏不是绝对定位", code.indexOf('position:absolute;top:6px;right:6px;z-index:9') === -1);
-t("热门：工具栏右对齐成一行", /justify-content:flex-end;gap:6px/.test(code));
-t("热门：不再给 .slidebox 打 position:relative", code.indexOf('getComputedStyle(box).position') === -1);
+// 4.18.0：热门按钮移进右侧边栏
+t("热门：入口挂在浮动工具栏里", /function appendHotTopicsButtons\(buttonContainer\)/.test(code) && /buttonContainer\.appendChild\(openBtn\);/.test(code));
+t("热门：不再往轮播里插 bar", code.indexOf('bgshHotOpenAll') === -1 || code.indexOf('id = "bgshHotOpenAll"') === -1);
+t("热门：边栏调用在预览按钮之后", /createPreviewSizeAdjustButton\(\)\);[\s\S]{0,220}?appendHotTopicsButtons\(buttonContainer\);/.test(code));
+t("热门：屏蔽首页时不加按钮", /if \(!settings\.blockingIndex\) appendHotTopicsButtons/.test(code));
 
 // 5) 版本一致性
 const v = (code.match(/^\/\/\s*@version\s+(\S+)/m) || [])[1];

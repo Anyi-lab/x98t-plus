@@ -56,26 +56,23 @@ const check = (ok, msg) => { console.log((ok ? 'PASS ' : 'FAIL ') + msg); if (!o
 const slides = [...doc.querySelectorAll('.slidebox .slideshow li > a[href]')];
 check(slides.length > 0, '样本轮播含 ' + slides.length + ' 张幻灯片');
 
-const bar = doc.getElementById('bgshHotOpenAll');
-check(!!bar, '轮播上出现工具栏');
+// 4.18.0：按钮搬进右侧浮动工具栏，不再往轮播里塞东西
+const toolbar = doc.querySelector('.bgsh-toolbar');
+check(!!toolbar, '右侧浮动工具栏存在');
 const openBtn = doc.getElementById('bgshHotOpenAllBtn');
-check(!!openBtn, '有「全部打开」按钮');
+const copyBtn = doc.getElementById('bgshHotCopyAllBtn');
+check(!!openBtn, '有「热门全部打开」按钮');
+check(!!copyBtn, '有「复制热门链接」按钮');
+check(openBtn && openBtn.closest('.bgsh-toolbar') === toolbar, '按钮挂在浮动工具栏内（右侧边栏）');
+check(copyBtn && copyBtn.closest('.bgsh-toolbar') === toolbar, '复制按钮也在浮动工具栏内');
+check(!doc.getElementById('bgshHotOpenAll'), '轮播附近不再有独立 bar（bgshHotOpenAll 已移除）');
 check(openBtn && openBtn.textContent.includes('(' + slides.length + ')'),
   '按钮张数 = 幻灯片数（' + (openBtn ? openBtn.textContent : '') + '）');
-// 关键回归：工具栏不能压在图/页码上 —— 改成轮播后面的独立一行
 const sb = doc.querySelector('.slidebox');
-check(!!sb, '样本里有 .slidebox');
-check(bar && bar.parentElement !== sb, '工具栏不再是 .slidebox 的子元素（不会压住封面和 1..20 页码）');
-check(bar && sb && bar.previousElementSibling === sb, '工具栏紧跟在轮播后面（同一父节点）');
-const bstyle = bar ? bar.style : {};
-check(bstyle.position !== 'absolute', '工具栏不是绝对定位（不会浮在图上层）');
-
-// 只插一份
-check(doc.querySelectorAll('#bgshHotOpenAll').length === 1, '工具栏只插了一份');
+check(sb && !sb.querySelector('[id^=bgshHot]'), '轮播容器里没有任何脚本按钮（不压封面、不压 1..20 页码）');
+check(doc.querySelectorAll('#bgshHotOpenAllBtn').length === 1, '按钮只插了一份');
 
 // 复制
-const copyBtn = doc.getElementById('bgshHotCopyAllBtn');
-check(!!copyBtn, '有「复制」按钮');
 if (copyBtn) {
   copyBtn.click();
   await new Promise(r => setTimeout(r, 300));
@@ -98,7 +95,7 @@ if (openBtn) {
 }
 
 // 不该误伤：其它页面位置没有这个工具栏
-check(doc.querySelectorAll('#bgshHotOpenAll').length === 1, '没有在别处重复插入');
+check(doc.querySelectorAll('#bgshHotOpenAllBtn').length === 1 && !doc.getElementById('bgshHotOpenAll'), '没有在别处重复插入');
 check(errors.length === 0, '无运行时异常' + (errors.length ? '：' + errors[0] : ''));
 
 console.log(fails ? `\nRESULT: ${fails} failed` : '\nRESULT: all passed');
